@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       const value = item as { id?: string; phrase?: string; note?: string; tone?: number };
       return { id: value.id ?? crypto.randomUUID(), phrase: String(value.phrase ?? "").slice(0, 120), note: String(value.note ?? "").slice(0, 800), tone: Number(value.tone) || 0 };
     }).filter((item: { phrase: string; note: string }) => item.phrase && item.note) : [];
-    const row = { teacher_id: teacher.id, title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString() };
+    const row = { teacher_id: teacher.id, title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, extraSections: body.extraSections ?? [], authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString() };
     const response = await userRest("literary_works", teacher.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(row) });
     return NextResponse.json(await response.json(), { status: response.status });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "출판하지 못했습니다." }, { status: 403 }); }

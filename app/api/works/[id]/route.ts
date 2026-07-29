@@ -13,7 +13,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const teacher = await requireRole(request, "teacher"); const { id } = await params; const body = await request.json();
     const annotations = Array.isArray(body.annotations) ? body.annotations : [];
-    const row = { title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const row = { title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, extraSections: body.extraSections ?? [], authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const response = await userRest(`literary_works?id=eq.${id}&teacher_id=eq.${teacher.id}`, teacher.token, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(row) }); const rows = await response.json();
     if (!response.ok || !rows[0]) throw new Error("수정 권한이 없거나 작품을 찾을 수 없습니다.");
     return NextResponse.json(rows[0]);
