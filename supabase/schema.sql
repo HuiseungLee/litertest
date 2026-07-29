@@ -36,3 +36,4 @@ create policy "users read own profile" on public.profiles for select using (id =
 create policy "students create own profile" on public.profiles for insert with check (id = auth.uid() and role = 'student');
 create policy "users read own attempts" on public.quiz_attempts for select using (student_id = auth.uid());
 create policy "students create own attempts" on public.quiz_attempts for insert with check (student_id = auth.uid());
+create policy "students update own attempts" on public.quiz_attempts for update using (student_id = auth.uid()) with check (student_id = auth.uid());
