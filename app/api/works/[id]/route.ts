@@ -24,3 +24,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json(rows[0]);
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "출판된 해설을 수정하지 못했습니다." }, { status: 403 }); }
 }
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const teacher = await requireRole(request, "teacher"); const { id } = await params;
+    const response = await userRest(`literary_works?id=eq.${id}&teacher_id=eq.${teacher.id}`, teacher.token, { method: "DELETE", headers: { Prefer: "return=representation" } });
+    const rows = await response.json();
+    if (!response.ok || !rows[0]) throw new Error("삭제 권한이 없거나 작품을 찾을 수 없습니다.");
+    return NextResponse.json({ deleted: true, id });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "출판물을 삭제하지 못했습니다." }, { status: 403 }); }
+}
