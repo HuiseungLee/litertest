@@ -10,7 +10,7 @@ create table if not exists public.literary_works (
   teacher_id uuid not null references public.profiles(id),
   title text not null, author text, genre text, source_text text, theme text,
   expression_features text, summary text, commentary text not null,
-  generated_result jsonb not null, published_at timestamptz,
+  generated_result jsonb not null default '{}'::jsonb, published_at timestamptz,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 
