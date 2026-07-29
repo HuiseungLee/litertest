@@ -13,10 +13,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const teacher = await requireRole(request, "teacher"); const { id } = await params; const body = await request.json();
     const annotations = Array.isArray(body.annotations) ? body.annotations.map((item: unknown) => {
-      const value = item as { id?: string; phrase?: string; note?: string; tone?: number; start?: number; end?: number };
+      const value = item as { id?: string; phrase?: string; note?: string; tone?: number; start?: number; end?: number; area?: string };
       const start = Number.isInteger(value.start) && Number(value.start) >= 0 ? Number(value.start) : undefined;
       const end = Number.isInteger(value.end) && Number(value.end) > Number(start ?? -1) ? Number(value.end) : undefined;
-      return { id: value.id ?? crypto.randomUUID(), phrase: String(value.phrase ?? "").slice(0, 120), note: String(value.note ?? "").slice(0, 800), tone: Number(value.tone) || 0, ...(start !== undefined && end !== undefined ? { start, end } : {}) };
+      return { id: value.id ?? crypto.randomUUID(), phrase: String(value.phrase ?? "").slice(0, 120), note: String(value.note ?? "").slice(0, 800), tone: Number(value.tone) || 0, area: value.area === "modern" ? "modern" : "source", ...(start !== undefined && end !== undefined ? { start, end } : {}) };
     }).filter((item: { phrase: string; note: string }) => item.phrase && item.note) : [];
     const row = { title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, extraSections: body.extraSections ?? [], authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const response = await userRest(`literary_works?id=eq.${id}&teacher_id=eq.${teacher.id}`, teacher.token, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(row) }); const rows = await response.json();
