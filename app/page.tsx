@@ -38,7 +38,7 @@ function poem(text: string | undefined, annotations: Annotation[], editable = fa
     matches.forEach((item) => {
       const start = Math.max(0, (item.start || 0) - lineStart); const end = Math.min(line.length, (item.end || 0) - lineStart);
       if (start > position) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position, start)}</Fragment>);
-      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0}>{line.slice(start, end)}<span className="term-tooltip">{item.note}{editable && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRemove?.(item.id); }}>삭제</button>}</span></mark>);
+      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
       position = Math.max(position, end);
     });
     if (position < line.length) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position)}</Fragment>);
@@ -82,6 +82,7 @@ function Publication({ form, annotations, blocks, extras, editor, update, update
     {editor && <button type="button" className="delete-inline" onClick={() => removeExtra?.(item.id)}>삭제</button>}
   </div>);
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
+  const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
   return <article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
     <div className="literature-header">
       <div className="genre-pill">{editor ? editableText("genre", form.genre, "갈래") : form.genre}</div>
@@ -102,8 +103,8 @@ function Publication({ form, annotations, blocks, extras, editor, update, update
         <section id="appreciation" className="literature-section"><div className="section-rule" /><article>
           <h3>작품 원문</h3>
           {editor ? <><label className="source-label">작품 원문 또는 발췌 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" onClick={onLoadSource}>AI 원문 불러오기</button></span></label><textarea className="source-editor" value={form.sourceText} onChange={(e) => update?.("sourceText", e.target.value)} onSelect={onSelectSource} placeholder="원문을 입력하고, 해설할 구절을 드래그해 선택하세요." />
-            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주가 적용된 모습</span></div><div className="poem editor-poem">{poem(form.sourceText, annotations, true, removeAnnotation, "source")}</div></> : <div className="poem">{poem(form.sourceText, annotations, false, undefined, "source")}</div>}
-          {!blocks.modernTranslationHidden && <><h3>현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <><textarea className="section-editor modern-editor" value={blocks.modernTranslation} onChange={(e) => updateBlock?.("modernTranslation", e.target.value)} onSelect={onSelectModern} placeholder="현대어 풀이를 작성하고 해설할 구절을 드래그해 선택하세요." /><div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>현대어 풀이 각주 미리보기</span></div><div className="poem editor-poem">{poem(blocks.modernTranslation, annotations, true, removeAnnotation, "modern")}</div></> : <div className="poem">{poem(blocks.modernTranslation, annotations, false, undefined, "modern")}</div>}</>}
+            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주가 적용된 모습</span></div><div className="poem editor-poem">{poem(form.sourceText, annotations, true, removeAnnotation, "source")}</div>{annotationManager("source")}</> : <div className="poem">{poem(form.sourceText, annotations, false, undefined, "source")}</div>}
+          {!blocks.modernTranslationHidden && <><h3>현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <><textarea className="section-editor modern-editor" value={blocks.modernTranslation} onChange={(e) => updateBlock?.("modernTranslation", e.target.value)} onSelect={onSelectModern} placeholder="현대어 풀이를 작성하고 해설할 구절을 드래그해 선택하세요." /><div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>현대어 풀이 각주 미리보기</span></div><div className="poem editor-poem">{poem(blocks.modernTranslation, annotations, true, removeAnnotation, "modern")}</div>{annotationManager("modern")}</> : <div className="poem">{poem(blocks.modernTranslation, annotations, false, undefined, "modern")}</div>}</>}
           {editor && blocks.modernTranslationHidden && <button type="button" className="add-inline" onClick={onRestoreModern}>+ 현대어 풀이 추가</button>}
           {extra("appreciation")}{add("appreciation")}
         </article></section>
