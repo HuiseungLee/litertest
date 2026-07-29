@@ -10,10 +10,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(siteUrl),
-    title: "문학의 장면 | 고등학생 문학 해설",
-    description: "어려운 문학 작품을 장면부터 차근차근 이해하는 고등학생용 문학 해설 사이트",
-    openGraph: { title: "문학의 장면", description: "마음의 지도가 되는 문학 해설", images: [{ url: `${siteUrl}/og.png`, width: 1200, height: 630 }] },
-    twitter: { card: "summary_large_image", title: "문학의 장면", description: "마음의 지도가 되는 문학 해설", images: [`${siteUrl}/og.png`] },
+    title: "문학+각주 | 문학 원문 해설 편집기",
+    description: "문학 작품의 원문, 작품 정보, 각주를 한 화면에서 편집하는 학생용 해설지 제작 도구",
+    openGraph: { title: "문학+각주", description: "문학 원문 해설 편집기", images: [{ url: `${siteUrl}/og.png`, width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title: "문학+각주", description: "문학 원문 해설 편집기", images: [`${siteUrl}/og.png`] },
   };
 }
 
