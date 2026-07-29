@@ -74,6 +74,20 @@ function Publication({ form, annotations, blocks, extras, editor, update, update
   onChooseImage?: (file?: File) => void; onSelectSource?: () => void; onSelectModern?: () => void; onAddNote?: (area: "source" | "modern") => void; onLoadSource?: () => void; onSearchSources?: () => void; onDeleteModern?: () => void;
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const page = pageRef.current; const body = page?.querySelector<HTMLElement>(".literature-body");
+    if (!body) return;
+    const align = () => {
+      const links = Array.from(body.querySelectorAll<HTMLAnchorElement>(".section-rail a"));
+      ["appreciation", "summary", "deep"].forEach((id, index) => {
+        const section = body.querySelector<HTMLElement>(`#${id}`); const link = links[index];
+        if (section && link) link.style.top = `${section.offsetTop}px`;
+      });
+    };
+    const frame = requestAnimationFrame(align); const observer = new ResizeObserver(align); observer.observe(body); window.addEventListener("resize", align);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", align); };
+  }, [form.sourceText, form.theme, form.expressionFeatures, blocks.modernTranslation, blocks.authorIntro, blocks.deepInquiry, extras, annotations]);
   const editableText = (key: keyof typeof blankForm, value: string, placeholder: string, className = "") => editor
     ? <input className={`publication-input ${className}`} value={value} onChange={(e) => update?.(key, e.target.value)} placeholder={placeholder} aria-label={placeholder} />
     : <>{value || placeholder}</>;
@@ -86,7 +100,7 @@ function Publication({ form, annotations, blocks, extras, editor, update, update
     {editor && <button type="button" className="delete-inline" onClick={() => removeExtra?.(item.id)}>삭제</button>}
   </div>);
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
-  return <article className={`published-page ${editor ? "publication-editor" : ""}`}>
+  return <article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
     <div className="literature-header">
       <div className="genre-pill">{editor ? editableText("genre", form.genre, "갈래") : form.genre}</div>
       <div className={`author-portrait ${editor ? "is-drop-target" : ""}`} onClick={() => editor && imageInput.current?.click()} onDragOver={(e) => { if (editor) e.preventDefault(); }} onDrop={(e) => { if (editor) { e.preventDefault(); onChooseImage?.(e.dataTransfer.files[0]); } }}>
