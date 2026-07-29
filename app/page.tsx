@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
 
 type Role = "teacher" | "student" | null;
 type User = { id: string; email?: string; role: Role };
-type Annotation = { id: string; phrase: string; note: string; tone: number };
+type Annotation = { id: string; phrase: string; note: string; tone: number; start?: number; end?: number };
 type Group = "appreciation" | "summary" | "deep";
 type ExtraSection = { id: string; group: Group; title: string; content: string };
 type EditorBlocks = { modernTranslation: string; authorIntro: string; deepInquiry: string };
@@ -20,18 +20,33 @@ const blankForm = { title: "", author: "", genre: "현대시", sourceText: "", t
 
 function poem(text: string | undefined, annotations: Annotation[], editable = false, onRemove?: (id: string) => void) {
   if (!text) return <p className="empty-copy">작품 원문을 입력하거나 불러와 주세요.</p>;
-  const terms = annotations.filter((item) => item.phrase && item.note).sort((a, b) => b.phrase.length - a.phrase.length);
-  const pattern = terms.length ? new RegExp(`(${terms.map((item) => item.phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g") : null;
-  return text.split(/\r?\n/).map((line, lineIndex) => (
+  const phraseOffsets = new Map<string, number>();
+  const exact = annotations.flatMap((item) => {
+    if (Number.isInteger(item.start) && Number.isInteger(item.end) && (item.end || 0) > (item.start || 0)) return [item];
+    // Older saved notes had no selection coordinates. Show only one best-match occurrence,
+    // never every identical word, until the teacher saves the note again.
+    const from = phraseOffsets.get(item.phrase) || 0; const start = text.indexOf(item.phrase, from);
+    if (start < 0) return []; phraseOffsets.set(item.phrase, start + item.phrase.length);
+    return [{ ...item, start, end: start + item.phrase.length }];
+  });
+  let cursor = 0;
+  return text.split(/\r?\n/).map((line, lineIndex) => {
+    const lineStart = cursor; const lineEnd = lineStart + line.length; cursor = lineEnd + 1;
+    const matches = exact.filter((item) => (item.start || 0) < lineEnd && (item.end || 0) > lineStart).sort((a, b) => (a.start || 0) - (b.start || 0));
+    let position = 0;
+    const pieces: ReactNode[] = [];
+    matches.forEach((item) => {
+      const start = Math.max(0, (item.start || 0) - lineStart); const end = Math.min(line.length, (item.end || 0) - lineStart);
+      if (start > position) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position, start)}</Fragment>);
+      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0}>{line.slice(start, end)}<span className="term-tooltip">{item.note}{editable && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRemove?.(item.id); }}>삭제</button>}</span></mark>);
+      position = Math.max(position, end);
+    });
+    if (position < line.length) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position)}</Fragment>);
+    return (
     <p className={`poem-line${line ? "" : " stanza-break"}`} key={`${line}-${lineIndex}`}>
-      {pattern ? line.split(pattern).map((piece, index) => {
-        const term = terms.find((item) => item.phrase === piece);
-        return term ? <mark className={`poetic-term tone-${term.tone % toneNames.length}`} key={`${piece}-${index}`} tabIndex={0}>
-          {piece}<span className="term-tooltip">{term.note}{editable && <button type="button" onClick={() => onRemove?.(term.id)}>삭제</button>}</span>
-        </mark> : <Fragment key={`${piece}-${index}`}>{piece}</Fragment>;
-      }) : (line || "\u00a0")}
-    </p>
-  ));
+      {pieces.length ? pieces : "\u00a0"}
+    </p>);
+  });
 }
 
 function Publication({ form, annotations, blocks, extras, editor, update, updateBlock, addExtra, removeExtra, updateExtra, removeAnnotation, onChooseImage, onSelectSource, onAddNote, onLoadSource }: {
@@ -96,7 +111,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(); const [token, setToken] = useState("");
   const [screen, setScreen] = useState<"library" | "teacher" | "detail" | "quiz">("library"); const [works, setWorks] = useState<Work[]>([]); const [selected, setSelected] = useState<Work>();
   const [form, setForm] = useState(blankForm); const [blocks, setBlocks] = useState(emptyBlocks); const [editingId, setEditingId] = useState(""); const [annotations, setAnnotations] = useState<Annotation[]>([]); const [extras, setExtras] = useState<ExtraSection[]>([]);
-  const [selectedPhrase, setSelectedPhrase] = useState(""); const [note, setNote] = useState(""); const [tone, setTone] = useState(0); const [noteOpen, setNoteOpen] = useState(false);
+  const [selectedPhrase, setSelectedPhrase] = useState(""); const [selection, setSelection] = useState<{ start: number; end: number }>(); const [note, setNote] = useState(""); const [tone, setTone] = useState(0); const [noteOpen, setNoteOpen] = useState(false);
   const [query, setQuery] = useState(""); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(false); const [authOpen, setAuthOpen] = useState(false); const [authMode, setAuthMode] = useState<"login" | "signup">("login"); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [questions, setQuestions] = useState<any[]>([]); const [answers, setAnswers] = useState<Record<string, number>>({}); const [attemptId, setAttemptId] = useState("");
   const sourceRef = useRef<HTMLTextAreaElement>(null); const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL; const publicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -109,9 +124,9 @@ export default function Home() {
   async function authenticate(event: FormEvent) { event.preventDefault(); if (!publicUrl || !publicKey) return setMessage("Supabase 공개 환경 변수를 확인해 주세요."); setLoading(true); try { const endpoint = authMode === "signup" ? "signup" : "token?grant_type=password"; const res = await fetch(`${publicUrl}/auth/v1/${endpoint}`, { method: "POST", headers: { apikey: publicKey, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const data = await res.json(); if (!res.ok) throw new Error(data.msg || data.error_description); if (!data.access_token) { setMessage("확인 메일을 열어 계정을 인증한 뒤 로그인해 주세요."); return; } if (authMode === "signup") await fetch(`${publicUrl}/rest/v1/profiles`, { method: "POST", headers: { apikey: publicKey, Authorization: `Bearer ${data.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ id: data.user.id, role: "student", display_name: email.split("@")[0] }) }); sessionStorage.setItem("literary-session", JSON.stringify(data)); setToken(data.access_token); await loadSession(data.access_token); setAuthOpen(false); } catch (error) { setMessage(error instanceof Error ? error.message : "로그인에 실패했습니다."); } finally { setLoading(false); } }
   function newTeacher() { setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setAnnotations([]); setExtras([]); setScreen("teacher"); }
   function editSelected() { if (!selected) return; setEditingId(selected.id); setForm({ title: selected.title || "", author: selected.author || "", genre: selected.genre || "현대시", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }); setBlocks(selected.generated_result?.editorBlocks || emptyBlocks); setAnnotations(selected.generated_result?.annotations || []); setExtras(selected.generated_result?.extraSections || []); setScreen("teacher"); }
-  function selectSource() { const node = document.querySelector<HTMLTextAreaElement>(".source-editor"); const phrase = node?.value.slice(node.selectionStart, node.selectionEnd).trim(); if (phrase) setSelectedPhrase(phrase); }
+  function selectSource() { const node = document.querySelector<HTMLTextAreaElement>(".source-editor"); if (!node) return; const start = node.selectionStart; const end = node.selectionEnd; const phrase = node.value.slice(start, end); if (phrase.trim()) { setSelectedPhrase(phrase); setSelection({ start, end }); } }
   function addNote() { if (!selectedPhrase) return setMessage("원문에서 해설할 시어·구절을 드래그해 선택해 주세요."); setNote(""); setNoteOpen(true); }
-  function saveNote() { if (!note.trim()) return setMessage("학생에게 보일 각주 설명을 입력해 주세요."); setAnnotations((now) => [...now, { id: crypto.randomUUID(), phrase: selectedPhrase, note: note.trim(), tone }]); setSelectedPhrase(""); setNoteOpen(false); }
+  function saveNote() { if (!note.trim()) return setMessage("학생에게 보일 각주 설명을 입력해 주세요."); if (!selection) return setMessage("원문에서 다시 구절을 선택해 주세요."); setAnnotations((now) => [...now, { id: crypto.randomUUID(), phrase: selectedPhrase, note: note.trim(), tone, start: selection.start, end: selection.end }]); setSelectedPhrase(""); setSelection(undefined); setNoteOpen(false); }
   function addExtra(group: Group) { const title = window.prompt("새 하위 목록의 제목을 입력하세요."); if (!title?.trim()) return; setExtras((now) => [...now, { id: crypto.randomUUID(), group, title: title.trim(), content: "내용을 작성하세요." }]); }
   function imageFile(file?: File) { if (!file) return; const reader = new FileReader(); reader.onload = () => update("authorImageUrl", String(reader.result || "")); reader.readAsDataURL(file); }
   async function loadSource() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); setLoading(true); try { const res = await fetch("/api/works/source", { method: "POST", headers: headers(), body: JSON.stringify({ title: form.title, author: form.author }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error); update("sourceText", data.sourceText); } catch (error) { setMessage(error instanceof Error ? error.message : "원문을 불러오지 못했습니다."); } finally { setLoading(false); } }
