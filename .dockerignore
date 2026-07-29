@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+.env.local
+.env.synology
+.env
+npm-debug.log*
+dist
+build
+outputs
+coverage

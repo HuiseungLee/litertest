@@ -1,0 +1,14 @@
+services:
+  literature-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+    container_name: literature-ai
+    restart: unless-stopped
+    env_file:
+      - .env.synology
+    ports:
+      - "3000:3000"
