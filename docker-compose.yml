@@ -9,6 +9,6 @@ services:
     container_name: literature-ai
     restart: unless-stopped
     env_file:
-      - .env.synology
+      - .env
     ports:
       - "3000:3000"
