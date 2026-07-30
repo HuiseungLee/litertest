@@ -2,6 +2,41 @@ import { NextResponse } from "next/server";
 import { configured, requireRole, userRest } from "../../../_lib/supabase";
 
 export const runtime = "nodejs";
-const prompt = `당신은 고등학교 국어 형성평가 출제 도우미입니다. 제공된 작품 해설만을 근거로 5지선다 단일정답 문항 3개를 만드세요. 작품 원문이나 해설에 없는 사실·인용은 만들지 마세요. 반드시 JSON만 반환하세요. 형식: {"questions":[{"id":"q1","stem":"...","choices":[{"number":1,"text":"..."}],"answer":1,"explanation":"..."}]}`;
-async function generate(apiKey: string, model: string, work: unknown) { const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generationConfig: { responseMimeType: "application/json", temperature: 0.3 }, contents: [{ parts: [{ text: `${prompt}\n\n${JSON.stringify(work)}` }] }] }) }); if (!response.ok) throw new Error(`형성평가 생성 요청 실패: ${response.status}`); const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] }; const text = data.candidates?.[0]?.content?.parts?.map(part => part.text ?? "").join("") ?? ""; return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")); }
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) { try { if (!configured()) throw new Error("Supabase 연결이 설정되지 않았습니다."); const student = await requireRole(request, "student"); const { id } = await params; const workResponse = await userRest(`literary_works?id=eq.${id}&published_at=not.is.null&select=id,title,author,genre,source_text,theme,expression_features,summary,commentary,generated_result`, student.token); const works = await workResponse.json(); const work = works[0]; if (!work) throw new Error("출판된 작품을 찾을 수 없습니다."); const apiKey = process.env.GEMINI_API_KEY; if (!apiKey) throw new Error("형성평가 생성용 Gemini API 키가 서버 환경 변수에 설정되지 않았습니다."); const quiz = await generate(apiKey, "gemini-3.5-flash-lite", work); const attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ work_id: id, student_id: student.id, questions: quiz.questions, answers: {} }) }); const attempts = await attemptResponse.json(); return NextResponse.json({ attemptId: attempts[0]?.id, questions: quiz.questions }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "형성평가를 생성하지 못했습니다." }, { status: 403 }); } }
+
+type Work = { title?: string; author?: string | null; genre?: string | null; theme?: string | null; summary?: string | null };
+type Question = { id: string; question: string; choices: string[]; answer: number; explanation: string };
+
+function choices(answer: string, alternatives: string[]) {
+  return [answer, ...alternatives.filter((item) => item !== answer)].slice(0, 4);
+}
+
+function createQuickQuiz(work: Work): Question[] {
+  const title = work.title || "이 작품";
+  const author = work.author || "작자 정보 없음";
+  const genre = work.genre || "갈래 정보 없음";
+  const theme = work.theme || work.summary || "작품 해설에 제시된 핵심 내용";
+  return [
+    { id: "q1", question: "이 페이지에서 다루는 작품의 제목은 무엇인가?", choices: choices(title, [author, genre, "작품 정보에 없는 제목"]), answer: 0, explanation: `작품 제목은 ‘${title}’입니다.` },
+    { id: "q2", question: `‘${title}’의 작자는 누구인가?`, choices: choices(author, [title, genre, "작품 정보에 없는 작자"]), answer: 0, explanation: `이 페이지에 제시된 작자는 ‘${author}’입니다.` },
+    { id: "q3", question: `‘${title}’의 해설 내용으로 가장 알맞은 것은?`, choices: choices(theme, ["작품과 관련 없는 인물의 전기", "해설에 제시되지 않은 사건", "작품과 무관한 시대 배경"]), answer: 0, explanation: "작품 해설에 제시된 내용으로 확인할 수 있습니다." },
+  ];
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    if (!configured()) throw new Error("Supabase 연결이 설정되지 않았습니다.");
+    const student = await requireRole(request, "student");
+    const { id } = await params;
+    const workResponse = await userRest(`literary_works?id=eq.${id}&published_at=not.is.null&select=id,title,author,genre,theme,summary`, student.token);
+    const works = await workResponse.json() as Work[];
+    const work = works[0];
+    if (!workResponse.ok || !work) throw new Error("출판된 작품을 찾을 수 없습니다.");
+    const questions = createQuickQuiz(work);
+    const attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ work_id: id, student_id: student.id, questions, answers: {} }) });
+    const attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
+    if (!attemptResponse.ok || !attempts[0]?.id) throw new Error(attempts[0]?.message || "형성평가 기록을 만들지 못했습니다.");
+    return NextResponse.json({ attemptId: attempts[0].id, questions });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "형성평가를 생성하지 못했습니다." }, { status: 403 });
+  }
+}
