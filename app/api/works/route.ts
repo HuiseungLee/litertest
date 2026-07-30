@@ -4,9 +4,16 @@ import { configured, publicRest, requireRole, userRest } from "../_lib/supabase"
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   if (!configured()) return NextResponse.json({ error: "Supabase 서버 연결이 아직 설정되지 않았습니다." }, { status: 503 });
-  const { searchParams } = new URL(request.url); const keyword = searchParams.get("q")?.trim();
-  const filter = keyword ? `&or=(title.ilike.*${encodeURIComponent(keyword)}*,author.ilike.*${encodeURIComponent(keyword)}*)` : "";
-  const response = await publicRest(`literary_works?published_at=not.is.null&select=id,title,author,genre,theme,summary,published_at${filter}&order=published_at.desc`);
+  const { searchParams } = new URL(request.url); const keyword = searchParams.get("q")?.trim(); const category = searchParams.get("category")?.trim();
+  if (searchParams.get("categories") === "1") {
+    const response = await publicRest("literary_works?published_at=not.is.null&select=genre");
+    const rows = await response.json() as Array<{ genre?: string | null }>;
+    const categories = [...new Set(rows.map((row) => row.genre?.trim()).filter((genre): genre is string => Boolean(genre)))].sort((a, b) => a.localeCompare(b, "ko"));
+    return NextResponse.json(categories, { status: response.status });
+  }
+  const keywordFilter = keyword ? `&or=(title.ilike.*${encodeURIComponent(keyword)}*,author.ilike.*${encodeURIComponent(keyword)}*)` : "";
+  const categoryFilter = category ? `&genre=eq.${encodeURIComponent(category)}` : "";
+  const response = await publicRest(`literary_works?published_at=not.is.null&select=id,title,author,genre,theme,summary,published_at${keywordFilter}${categoryFilter}&order=published_at.desc`);
   return NextResponse.json(await response.json(), { status: response.status });
 }
 export async function POST(request: Request) {
