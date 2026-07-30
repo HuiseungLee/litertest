@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   }
   const keywordFilter = keyword ? `&or=(title.ilike.*${encodeURIComponent(keyword)}*,author.ilike.*${encodeURIComponent(keyword)}*)` : "";
   const categoryFilter = category ? `&genre=eq.${encodeURIComponent(category)}` : "";
-  const response = await publicRest(`literary_works?published_at=not.is.null&select=id,title,author,genre,theme,summary,published_at${keywordFilter}${categoryFilter}&order=published_at.desc`);
+  const response = await publicRest(`literary_works?published_at=not.is.null&select=id,title,author,genre,source_text,theme,summary,published_at${keywordFilter}${categoryFilter}&order=published_at.desc`);
   return NextResponse.json(await response.json(), { status: response.status });
 }
 export async function POST(request: Request) {
