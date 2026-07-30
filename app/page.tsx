@@ -38,7 +38,7 @@ function poem(text: string | undefined, annotations: Annotation[], editable = fa
     matches.forEach((item) => {
       const start = Math.max(0, (item.start || 0) - lineStart); const end = Math.min(line.length, (item.end || 0) - lineStart);
       if (start > position) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position, start)}</Fragment>);
-      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
+      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0} onMouseMove={(event) => window.dispatchEvent(new CustomEvent("literary-tooltip", { detail: { note: item.note, x: event.clientX, y: event.clientY } }))} onMouseLeave={() => window.dispatchEvent(new Event("literary-tooltip-hide"))}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
       position = Math.max(position, end);
     });
     if (position < line.length) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position)}</Fragment>);
@@ -47,6 +47,17 @@ function poem(text: string | undefined, annotations: Annotation[], editable = fa
       {pieces.length ? pieces : "\u00a0"}
     </p>);
   });
+}
+
+function CursorTooltip() {
+  const [tooltip, setTooltip] = useState<{ note: string; x: number; y: number }>();
+  useEffect(() => {
+    const show = (event: Event) => setTooltip((event as CustomEvent<{ note: string; x: number; y: number }>).detail);
+    const hide = () => setTooltip(undefined);
+    window.addEventListener("literary-tooltip", show); window.addEventListener("literary-tooltip-hide", hide);
+    return () => { window.removeEventListener("literary-tooltip", show); window.removeEventListener("literary-tooltip-hide", hide); };
+  }, []);
+  return tooltip ? <div className="cursor-tooltip" style={{ left: Math.min(tooltip.x + 16, window.innerWidth - 320), top: Math.min(tooltip.y + 18, window.innerHeight - 100) }}>{tooltip.note}</div> : null;
 }
 
 function Publication({ form, annotations, blocks, extras, publishedAt, studentCheck, editor, update, updateBlock, addExtra, removeExtra, updateExtra, removeAnnotation, onChooseImage, onSelectSource, onSelectModern, onAddNote, onLoadSource, onSearchSources, onDeleteModern, onRestoreModern }: {
@@ -85,7 +96,7 @@ function Publication({ form, annotations, blocks, extras, publishedAt, studentCh
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
   const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
   const publishedDate = publishedAt ? new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "numeric", day: "numeric" }).format(new Date(publishedAt)) : "";
-  return <article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
+  return <><CursorTooltip /><article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
     <div className="literature-header">
       <div className="genre-pill">{editor ? editableText("genre", form.genre, "갈래") : form.genre}</div>
       <div className={`author-portrait ${editor ? "is-drop-target" : ""}`} onClick={() => editor && imageInput.current?.click()} onDragOver={(e) => { if (editor) e.preventDefault(); }} onDrop={(e) => { if (editor) { e.preventDefault(); onChooseImage?.(e.dataTransfer.files[0]); } }}>
@@ -123,7 +134,7 @@ function Publication({ form, annotations, blocks, extras, publishedAt, studentCh
         {studentCheck && <section id="check" className="literature-section student-check-section"><div className="section-rule" /><article><h3>형성평가</h3>{studentCheck}</article></section>}
       </div>
     </div>
-  </article>;
+  </article></>;
 }
 
 export default function Home() {
