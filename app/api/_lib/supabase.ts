@@ -21,9 +21,9 @@ export async function currentUser(request: Request) {
   const auth = await fetch(`${url}/auth/v1/user`, { headers: { apikey: publishableKey, Authorization: `Bearer ${token}` } });
   if (!auth.ok) return null;
   const user = await auth.json() as { id: string; email?: string };
-  const profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name`, token);
-  const profiles = await profileResponse.json() as { role?: string; display_name?: string }[];
-  return { ...user, role: profiles[0]?.role ?? null, displayName: profiles[0]?.display_name ?? null, token };
+  const profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name,real_name,nickname`, token);
+  const profiles = await profileResponse.json() as { role?: string; display_name?: string; real_name?: string; nickname?: string }[];
+  return { ...user, role: profiles[0]?.role ?? null, displayName: profiles[0]?.display_name ?? null, realName: profiles[0]?.real_name ?? null, nickname: profiles[0]?.nickname ?? null, token };
 }
 export async function requireRole(request: Request, role: "teacher" | "student") {
   const user = await currentUser(request);

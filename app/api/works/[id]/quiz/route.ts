@@ -44,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (process.env.GEMINI_API_KEY) {
       try { questions = await generateQuiz(process.env.GEMINI_API_KEY, work); } catch { /* Use the annotation-based quiz if Gemini is temporarily unavailable. */ }
     }
-    const attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ work_id: id, student_id: student.id, questions, answers: {} }) });
+    const attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ work_id: id, student_id: student.id, student_name: student.realName || null, student_nickname: student.nickname || student.displayName || null, questions, answers: {} }) });
     const attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
     if (!attemptResponse.ok || !attempts[0]?.id) throw new Error(attempts[0]?.message || "형성평가 기록을 만들지 못했습니다.");
     return NextResponse.json({ attemptId: attempts[0].id, questions });

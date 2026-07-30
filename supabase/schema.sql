@@ -2,6 +2,8 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role text not null check (role in ('teacher', 'student')),
   display_name text,
+  real_name text,
+  nickname text check (char_length(nickname) <= 7),
   created_at timestamptz not null default now()
 );
 
@@ -18,6 +20,8 @@ create table if not exists public.quiz_attempts (
   id uuid primary key default gen_random_uuid(),
   work_id uuid not null references public.literary_works(id) on delete cascade,
   student_id uuid not null references public.profiles(id) on delete cascade,
+  student_name text,
+  student_nickname text,
   questions jsonb not null, answers jsonb not null default '{}'::jsonb,
   score numeric, completed_at timestamptz,
   created_at timestamptz not null default now()
