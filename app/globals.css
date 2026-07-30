@@ -23,3 +23,4 @@
 .teacher-inline>form>.annotation-manager{display:none}.inline-annotation-manager{margin:14px 0 20px;padding:12px 14px}.inline-annotation-manager h4{margin:0 0 8px;font-size:13px;color:#42534d}.inline-annotation-manager li{padding:6px 0}.inline-annotation-manager li span{font-size:12px}.inline-annotation-manager li button{padding:4px 7px}
 .detail-actions .delete-published{margin-left:12px;border:1px solid #b85d65;border-radius:6px;background:#fff4f4;color:#a43f4c;padding:8px 12px;font-weight:700}.detail-actions .delete-published:disabled{opacity:.55;cursor:wait}
 .search select{width:150px}
+.student-check{padding:2px 10px 8px}.student-check p{margin:0 0 14px;color:#5c6966;font-size:14px;line-height:1.65}.student-check button{border:0;border-radius:7px;background:#193243;color:#fff;padding:11px 16px;font-weight:700}.student-check button:disabled{opacity:.65;cursor:wait}
