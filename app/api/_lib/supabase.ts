@@ -2,6 +2,17 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+// These two accounts have fixed roles even if an old or incomplete profile row remains.
+// Additional account roles continue to be managed through public.profiles in Supabase.
+function fixedRole(email?: string) {
+  const address = email?.trim().toLowerCase();
+  const teachers = (process.env.TEACHER_EMAILS || "lhsstart@gmail.com").split(",").map((value) => value.trim().toLowerCase());
+  const students = (process.env.STUDENT_EMAILS || "stu01@st.com").split(",").map((value) => value.trim().toLowerCase());
+  if (address && teachers.includes(address)) return "teacher" as const;
+  if (address && students.includes(address)) return "student" as const;
+  return undefined;
+}
+
 export function configured() { return Boolean(url && publishableKey); }
 export function userRest(path: string, token: string, init: RequestInit = {}) {
   if (!url || !publishableKey) throw new Error("Supabase 공개 환경 변수가 설정되지 않았습니다.");
@@ -23,7 +34,7 @@ export async function currentUser(request: Request) {
   const user = await auth.json() as { id: string; email?: string };
   const profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name,real_name,nickname`, token);
   const profiles = await profileResponse.json() as { role?: string; display_name?: string; real_name?: string; nickname?: string }[];
-  return { ...user, role: profiles[0]?.role ?? null, displayName: profiles[0]?.display_name ?? null, realName: profiles[0]?.real_name ?? null, nickname: profiles[0]?.nickname ?? null, token };
+  return { ...user, role: fixedRole(user.email) ?? profiles[0]?.role ?? null, displayName: profiles[0]?.display_name ?? null, realName: profiles[0]?.real_name ?? null, nickname: profiles[0]?.nickname ?? null, token };
 }
 export async function requireRole(request: Request, role: "teacher" | "student") {
   const user = await currentUser(request);
