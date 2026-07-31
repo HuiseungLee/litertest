@@ -38,7 +38,7 @@ function poem(text: string | undefined, annotations: Annotation[], editable = fa
     matches.forEach((item) => {
       const start = Math.max(0, (item.start || 0) - lineStart); const end = Math.min(line.length, (item.end || 0) - lineStart);
       if (start > position) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position, start)}</Fragment>);
-      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0} onMouseMove={(event) => window.dispatchEvent(new CustomEvent("literary-tooltip", { detail: { note: item.note, x: event.clientX, y: event.clientY } }))} onMouseLeave={() => window.dispatchEvent(new Event("literary-tooltip-hide"))}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
+      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0} onMouseMove={(event) => window.dispatchEvent(new CustomEvent("literary-tooltip", { detail: { note: item.note, tone: item.tone % toneNames.length, x: event.clientX, y: event.clientY } }))} onMouseLeave={() => window.dispatchEvent(new Event("literary-tooltip-hide"))}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
       position = Math.max(position, end);
     });
     if (position < line.length) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position)}</Fragment>);
@@ -50,14 +50,14 @@ function poem(text: string | undefined, annotations: Annotation[], editable = fa
 }
 
 function CursorTooltip() {
-  const [tooltip, setTooltip] = useState<{ note: string; x: number; y: number }>();
+  const [tooltip, setTooltip] = useState<{ note: string; tone: number; x: number; y: number }>();
   useEffect(() => {
-    const show = (event: Event) => setTooltip((event as CustomEvent<{ note: string; x: number; y: number }>).detail);
+    const show = (event: Event) => setTooltip((event as CustomEvent<{ note: string; tone: number; x: number; y: number }>).detail);
     const hide = () => setTooltip(undefined);
     window.addEventListener("literary-tooltip", show); window.addEventListener("literary-tooltip-hide", hide);
     return () => { window.removeEventListener("literary-tooltip", show); window.removeEventListener("literary-tooltip-hide", hide); };
   }, []);
-  return tooltip ? <div className="cursor-tooltip" style={{ left: Math.min(tooltip.x + 16, window.innerWidth - 320), top: Math.min(tooltip.y + 18, window.innerHeight - 100) }}>{tooltip.note}</div> : null;
+  return tooltip ? <div className={`cursor-tooltip tone-${tooltip.tone}`} style={{ left: Math.min(tooltip.x + 16, window.innerWidth - 320), top: Math.min(tooltip.y + 18, window.innerHeight - 100) }}>{tooltip.note}</div> : null;
 }
 
 function AttemptCards({ attempts, teacher = false }: { attempts: any[]; teacher?: boolean }) {
