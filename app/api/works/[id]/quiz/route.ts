@@ -44,8 +44,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (process.env.GEMINI_API_KEY) {
       try { questions = await generateQuiz(process.env.GEMINI_API_KEY, work); } catch { /* Use the annotation-based quiz if Gemini is temporarily unavailable. */ }
     }
-    const attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ work_id: id, student_id: student.id, student_name: student.realName || null, student_nickname: student.nickname || student.displayName || null, questions, answers: {} }) });
-    const attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
+    const baseAttempt = { work_id: id, student_id: student.id, questions, answers: {} };
+    let attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ ...baseAttempt, student_name: student.realName || null, student_nickname: student.nickname || student.displayName || null }) });
+    let attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
+    // Keep quiz generation available in projects whose quiz_attempts table predates
+    // the optional student_name / student_nickname columns.
+    if (!attemptResponse.ok && JSON.stringify(attempts).includes("student_name")) {
+      attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(baseAttempt) });
+      attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
+    }
     if (!attemptResponse.ok || !attempts[0]?.id) throw new Error(attempts[0]?.message || "형성평가 기록을 만들지 못했습니다.");
     return NextResponse.json({ attemptId: attempts[0].id, questions });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "형성평가를 생성하지 못했습니다." }, { status: 403 }); }
