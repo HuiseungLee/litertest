@@ -44,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (process.env.GEMINI_API_KEY) {
       try { questions = await generateQuiz(process.env.GEMINI_API_KEY, work); } catch { /* Use the annotation-based quiz if Gemini is temporarily unavailable. */ }
     }
-    const baseAttempt = { work_id: id, student_id: student.id, questions, answers: {} };
+    const baseAttempt = { work_id: id, student_id: student.id, questions, answers: { __studentProfile: { realName: student.realName || "", nickname: student.nickname || student.displayName || "" } } };
     let attemptResponse = await userRest("quiz_attempts", student.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ ...baseAttempt, student_name: student.realName || null, student_nickname: student.nickname || student.displayName || null }) });
     let attempts = await attemptResponse.json() as Array<{ id?: string; message?: string }>;
     // Keep quiz generation available in projects whose quiz_attempts table predates

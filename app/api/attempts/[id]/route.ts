@@ -11,7 +11,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const student = await requireRole(request, "student");
     const { id } = await params;
     const body = await request.json();
-    const payload = { answers: body.answers ?? {}, score: body.score ?? null, completed_at: new Date().toISOString() };
+    const payload = { answers: { ...(body.answers ?? {}), __studentProfile: { realName: student.realName || "", nickname: student.nickname || student.displayName || "" } }, score: body.score ?? null, completed_at: new Date().toISOString() };
     const response = await userRest(`quiz_attempts?id=eq.${id}&student_id=eq.${student.id}`, student.token, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(payload) });
     const updated = await response.json() as Attempt[];
     if (response.ok && updated[0]?.id) return NextResponse.json({ saved: true, attemptId: updated[0].id });
