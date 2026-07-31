@@ -7,8 +7,8 @@ export async function GET(request: Request) {
   try {
     if (!configured()) throw new Error("Supabase 서버 연결이 아직 설정되지 않았습니다.");
     const teacher = await requireRole(request, "teacher");
-    const baseQuery = `quiz_attempts?completed_at=not.is.null&select=id,student_id,score,questions,answers,completed_at,literary_works!inner(title,author,teacher_id)&literary_works.teacher_id=eq.${teacher.id}&order=completed_at.desc`;
-    const namedQuery = `quiz_attempts?completed_at=not.is.null&select=id,student_id,student_name,student_nickname,score,questions,answers,completed_at,literary_works!inner(title,author,teacher_id)&literary_works.teacher_id=eq.${teacher.id}&order=completed_at.desc`;
+    const baseQuery = "quiz_attempts?completed_at=not.is.null&select=id,student_id,score,questions,answers,completed_at,literary_works!inner(title,author)&order=completed_at.desc";
+    const namedQuery = "quiz_attempts?completed_at=not.is.null&select=id,student_id,student_name,student_nickname,score,questions,answers,completed_at,literary_works!inner(title,author)&order=completed_at.desc";
     let response = await userRest(namedQuery, teacher.token);
     let rows = await response.json();
     // Older databases do not yet have the optional name columns. Their feedback
