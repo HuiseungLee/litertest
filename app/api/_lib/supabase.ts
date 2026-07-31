@@ -26,15 +26,26 @@ export function rest(path: string, init: RequestInit = {}) {
   if (!url || !serviceKey) throw new Error("Supabase 서버 환경 변수가 설정되지 않았습니다.");
   return fetch(`${url}/rest/v1/${path}`, { ...init, headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
 }
+export async function updateUserMetadata(token: string, data: Record<string, string>) {
+  if (!url || !publishableKey) throw new Error("Supabase connection is not configured.");
+  const response = await fetch(`${url}/auth/v1/user`, { method: "PUT", headers: { apikey: publishableKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
+  if (!response.ok) throw new Error("Could not save account profile information.");
+  return response.json();
+}
 export async function currentUser(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token || !url || !publishableKey) return null;
   const auth = await fetch(`${url}/auth/v1/user`, { headers: { apikey: publishableKey, Authorization: `Bearer ${token}` } });
   if (!auth.ok) return null;
-  const user = await auth.json() as { id: string; email?: string };
-  const profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name,real_name,nickname`, token);
-  const profiles = await profileResponse.json() as { role?: string; display_name?: string; real_name?: string; nickname?: string }[];
-  return { ...user, role: fixedRole(user.email) ?? profiles[0]?.role ?? null, displayName: profiles[0]?.display_name ?? null, realName: profiles[0]?.real_name ?? null, nickname: profiles[0]?.nickname ?? null, token };
+  const user = await auth.json() as { id: string; email?: string; user_metadata?: { real_name?: string; nickname?: string } };
+  let profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name,real_name,nickname`, token);
+  let profileData = await profileResponse.json();
+  if (!profileResponse.ok && JSON.stringify(profileData).includes("nickname")) {
+    profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name`, token);
+    profileData = await profileResponse.json();
+  }
+  const profile = Array.isArray(profileData) ? profileData[0] as { role?: string; display_name?: string; real_name?: string; nickname?: string } | undefined : undefined;
+  return { ...user, role: fixedRole(user.email) ?? profile?.role ?? null, displayName: profile?.display_name ?? null, realName: profile?.real_name ?? user.user_metadata?.real_name ?? null, nickname: profile?.nickname ?? user.user_metadata?.nickname ?? profile?.display_name ?? null, token };
 }
 export async function requireRole(request: Request, role: "teacher" | "student") {
   const user = await currentUser(request);
