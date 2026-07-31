@@ -6,7 +6,7 @@ const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 // Additional account roles continue to be managed through public.profiles in Supabase.
 function fixedRole(email?: string) {
   const address = email?.trim().toLowerCase();
-  const teachers = (process.env.TEACHER_EMAILS || "lhsstart@gmail.com").split(",").map((value) => value.trim().toLowerCase());
+  const teachers = (process.env.TEACHER_EMAILS || "lhsstart@gmail.com,admin@admin.com").split(",").map((value) => value.trim().toLowerCase());
   const students = (process.env.STUDENT_EMAILS || "stu01@st.com").split(",").map((value) => value.trim().toLowerCase());
   if (address && teachers.includes(address)) return "teacher" as const;
   if (address && students.includes(address)) return "student" as const;
