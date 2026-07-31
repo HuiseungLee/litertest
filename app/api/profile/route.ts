@@ -17,6 +17,8 @@ export async function PATCH(request: Request) {
       response = await userRest(`profiles?id=eq.${student.id}`, student.token, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ display_name: nickname }) });
       rows = await response.json();
     }
+    await updateUserMetadata(student.token, { real_name: realName, nickname });
+    if (!response.ok || !rows[0]) return NextResponse.json({ saved: true, profileSynced: false, real_name: realName, nickname });
     if (!response.ok || !rows[0]) throw new Error(rows?.message || "내 정보를 저장하지 못했습니다.");
     await updateUserMetadata(student.token, { real_name: realName, nickname });
     return NextResponse.json(rows[0]);
