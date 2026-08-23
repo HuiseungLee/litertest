@@ -14,13 +14,12 @@ Supabase Auth에서 교사 계정을 만든 뒤, SQL Editor에서 해당 사용�
 
 1. Supabase SQL Editor에서 [`supabase/schema.sql`](supabase/schema.sql)을 실행합니다.
 2. 배포 환경 변수에 다음을 추가합니다.
-   - `GEMINI_API_KEY` (선택: 개인 메뉴에서 입력한 키를 대신 사용할 수 있음)
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (서버 전용. 브라우저에 노출하지 마세요.)
 3. 이 프로젝트는 Next.js Route Handler와 Node.js runtime을 사용합니다.
 
-`GET /api/health`는 Gemini 및 Supabase 환경 변수 설정 여부를 확인합니다. `POST /api/generate`는 세 에이전트 워크플로우를 실행하고, `POST /api/results` 및 `GET /api/results`는 Supabase 저장·조회에 사용합니다.
+`GET /api/health`는 Supabase 연결 환경 변수의 설정 여부를 확인합니다. 형성평가 생성 기능은 제거했으며, 학생과 교사의 상호작용은 작품별 Q&A에서 이루어집니다.
 
 ## 호환성 점검
 
