@@ -7,6 +7,7 @@ export function GET() {
     ok: true,
     supabasePublicConfigured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
     supabaseWriteConfigured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+    geminiSourceConfigured: Boolean(process.env.GEMINI_API_KEY),
     runtime: "nodejs",
   });
 }

@@ -17,9 +17,10 @@ Supabase Auth에서 교사 계정을 만든 뒤, SQL Editor에서 해당 사용�
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (서버 전용. 브라우저에 노출하지 마세요.)
+   - `GEMINI_API_KEY` (교사용 AI 원문 불러오기를 사용할 때만 필요합니다.)
 3. 이 프로젝트는 Next.js Route Handler와 Node.js runtime을 사용합니다.
 
-`GET /api/health`는 Supabase 연결 환경 변수의 설정 여부를 확인합니다. 형성평가 생성 기능은 제거했으며, 학생과 교사의 상호작용은 작품별 Q&A에서 이루어집니다.
+`GET /api/health`는 Supabase 연결 및 AI 원문 불러오기 환경 변수의 설정 여부를 확인합니다. Gemini 형성평가 생성 기능은 제거했으며, Gemini는 교사용 AI 원문 불러오기에만 사용합니다. AI가 반환한 원문은 정확성과 저작권 상태를 확인한 뒤 출판해야 합니다.
 
 ## 호환성 점검
 
