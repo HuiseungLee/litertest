@@ -45,11 +45,23 @@ export async function currentUser(request: Request) {
     profileData = await profileResponse.json();
   }
   const profile = Array.isArray(profileData) ? profileData[0] as { role?: string; display_name?: string; real_name?: string; nickname?: string } | undefined : undefined;
-  return { ...user, role: fixedRole(user.email) ?? profile?.role ?? (user.user_metadata?.role === "student" ? "student" : null), displayName: profile?.display_name ?? null, realName: profile?.real_name ?? user.user_metadata?.real_name ?? null, nickname: profile?.nickname ?? user.user_metadata?.nickname ?? profile?.display_name ?? null, token };
+  const assignedRole = fixedRole(user.email);
+  return { ...user, role: assignedRole ?? profile?.role ?? (user.user_metadata?.role === "student" ? "student" : null), fixedRole: assignedRole, profileRole: profile?.role, displayName: profile?.display_name ?? null, realName: profile?.real_name ?? user.user_metadata?.real_name ?? null, nickname: profile?.nickname ?? user.user_metadata?.nickname ?? profile?.display_name ?? null, token };
 }
 export async function requireRole(request: Request, role: "teacher" | "student") {
   const user = await currentUser(request);
   if (!user) throw new Error("로그인이 필요합니다.");
   if (user.role !== role) throw new Error(`${role === "teacher" ? "교사" : "학생"} 권한이 필요합니다.`);
+  // Fixed teacher accounts can predate the profiles table. Authentication still succeeds,
+  // but literary_works.teacher_id cannot reference the account until its profile exists.
+  if (role === "teacher" && user.fixedRole === "teacher" && user.profileRole !== "teacher") {
+    if (!serviceKey) throw new Error("교사 프로필을 만들기 위한 Supabase 서버 키가 설정되지 않았습니다.");
+    const displayName = user.displayName || user.email?.split("@")[0] || "교사";
+    const profileResponse = await rest("profiles?on_conflict=id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ id: user.id, role: "teacher", display_name: displayName }) });
+    if (!profileResponse.ok) {
+      const detail = await profileResponse.json().catch(() => ({})) as { message?: string; details?: string; hint?: string };
+      throw new Error(detail.message || detail.details || detail.hint || "교사 프로필을 준비하지 못했습니다.");
+    }
+  }
   return user;
 }

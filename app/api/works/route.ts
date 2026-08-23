@@ -28,6 +28,11 @@ export async function POST(request: Request) {
     }).filter((item: { phrase: string; note: string }) => item.phrase && item.note) : [];
     const row = { teacher_id: teacher.id, title: body.title, author: body.author || null, genre: body.genre || null, source_text: body.sourceText || null, theme: body.theme || null, expression_features: body.expressionFeatures || null, summary: body.summary || null, commentary: body.commentary, generated_result: { ...(body.generatedResult ?? {}), annotations, extraSections: body.extraSections ?? [], authorImageUrl: body.authorImageUrl || null }, published_at: new Date().toISOString() };
     const response = await userRest("literary_works", teacher.token, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(row) });
-    return NextResponse.json(await response.json(), { status: response.status });
+    const result = await response.json().catch(() => ({})) as { message?: string; details?: string; hint?: string } | unknown[];
+    if (!response.ok) {
+      const error = Array.isArray(result) ? undefined : result.message || result.details || result.hint;
+      return NextResponse.json({ error: error || "Supabase에 해설을 저장하지 못했습니다." }, { status: response.status });
+    }
+    return NextResponse.json(result, { status: response.status });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "출판하지 못했습니다." }, { status: 403 }); }
 }
