@@ -20,10 +20,14 @@ export async function POST(request: Request) {
     }
     const authResponse = await fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: body.email, password: body.password, data: { role, real_name: realName, nickname } }) });
     const data = await authResponse.json();
-    if (!authResponse.ok) throw new Error(data.msg || data.error_description || "Could not create the account.");
+    if (!authResponse.ok) {
+      const reason = String(data.msg || data.error_description || "");
+      if (/confirmation email/i.test(reason)) throw new Error("가입 확인 이메일을 보내지 못했습니다. 관리자에게 SMTP 설정을 확인해 달라고 알려 주세요.");
+      throw new Error(reason || "계정을 만들지 못했습니다.");
+    }
     if (data.access_token && data.user?.id) {
       const profileResponse = await userRest("profiles", data.access_token, { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ id: data.user.id, role, display_name: nickname }) });
-      if (!profileResponse.ok && role === "teacher") throw new Error("Teacher profile setup failed. Please contact the administrator.");
+      if (!profileResponse.ok && role === "teacher") throw new Error("교사 프로필을 만들지 못했습니다. 관리자에게 문의해 주세요.");
     }
     return NextResponse.json(data);
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Could not create the account." }, { status: 400 }); }

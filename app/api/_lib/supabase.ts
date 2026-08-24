@@ -52,15 +52,19 @@ export async function requireRole(request: Request, role: "teacher" | "student")
   const user = await currentUser(request);
   if (!user) throw new Error("로그인이 필요합니다.");
   if (user.role !== role) throw new Error(`${role === "teacher" ? "교사" : "학생"} 권한이 필요합니다.`);
-  // Fixed teacher accounts can predate the profiles table. Authentication still succeeds,
-  // but literary_works.teacher_id cannot reference the account until its profile exists.
-  if (role === "teacher" && user.fixedRole === "teacher" && user.profileRole !== "teacher") {
-    if (!serviceKey) throw new Error("교사 프로필을 만들기 위한 Supabase 서버 키가 설정되지 않았습니다.");
-    const displayName = user.displayName || user.email?.split("@")[0] || "교사";
-    const profileResponse = await rest("profiles?on_conflict=id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ id: user.id, role: "teacher", display_name: displayName }) });
+  // Email-confirmed signups do not receive a session during signup, so their profile is
+  // created lazily on the first authenticated action. Fixed teacher accounts are synced too.
+  const profileNeedsSync = (role === "teacher" && user.fixedRole === "teacher" && user.profileRole !== "teacher")
+    || (role === "student" && user.profileRole !== "student");
+  if (profileNeedsSync) {
+    if (!serviceKey) throw new Error("회원 프로필을 만들기 위한 Supabase 서버 키가 설정되지 않았습니다.");
+    const metadataName = String(user.user_metadata?.real_name || "").trim();
+    const metadataNickname = [...String(user.user_metadata?.nickname || "").trim()].slice(0, 7).join("");
+    const displayName = user.displayName || metadataNickname || user.email?.split("@")[0] || (role === "teacher" ? "교사" : "학생");
+    const profileResponse = await rest("profiles?on_conflict=id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ id: user.id, role, display_name: displayName, ...(metadataName ? { real_name: metadataName } : {}), ...(metadataNickname ? { nickname: metadataNickname } : {}) }) });
     if (!profileResponse.ok) {
       const detail = await profileResponse.json().catch(() => ({})) as { message?: string; details?: string; hint?: string };
-      throw new Error(detail.message || detail.details || detail.hint || "교사 프로필을 준비하지 못했습니다.");
+      throw new Error(detail.message || detail.details || detail.hint || `${role === "teacher" ? "교사" : "학생"} 프로필을 준비하지 못했습니다.`);
     }
   }
   return user;

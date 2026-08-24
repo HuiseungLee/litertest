@@ -37,6 +37,24 @@ STUDENT_EMAILS=
 TEACHER_INVITE_CODE=별도로_정한_초대코드
 ```
 
+### 공개 학생 가입과 확인 이메일
+
+누구나 학생으로 가입할 수 있게 하되 실제 이메일 확인을 요구하려면 Supabase `.env`에서 가입을 허용하고 자동 확인을 끈 뒤 운영용 SMTP를 설정합니다.
+
+```dotenv
+DISABLE_SIGNUP=false
+ENABLE_EMAIL_SIGNUP=true
+ENABLE_EMAIL_AUTOCONFIRM=false
+SMTP_ADMIN_EMAIL=no-reply@example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=SMTP_사용자
+SMTP_PASS=SMTP_비밀번호
+SMTP_SENDER_NAME=수빙니기는 문학시간
+```
+
+설정 후 `docker compose up -d --force-recreate auth`로 인증 컨테이너를 다시 만듭니다. SMTP 비밀번호는 GitHub에 커밋하거나 화면으로 공유하지 않습니다.
+
 컨테이너를 빌드하고 실행합니다.
 
 ```bash
