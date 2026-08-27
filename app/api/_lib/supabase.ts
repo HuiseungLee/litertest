@@ -26,6 +26,13 @@ export function rest(path: string, init: RequestInit = {}) {
   if (!url || !serviceKey) throw new Error("Supabase 서버 환경 변수가 설정되지 않았습니다.");
   return fetch(`${url}/rest/v1/${path}`, { ...init, headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
 }
+export function deleteAuthUser(userId: string) {
+  if (!url || !serviceKey) throw new Error("회원 탈퇴를 위한 Supabase 서버 환경 변수가 설정되지 않았습니다.");
+  return fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+  });
+}
 export async function updateUserMetadata(token: string, data: Record<string, string>) {
   if (!url || !publishableKey) throw new Error("Supabase connection is not configured.");
   const response = await fetch(`${url}/auth/v1/user`, { method: "PUT", headers: { apikey: publishableKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
