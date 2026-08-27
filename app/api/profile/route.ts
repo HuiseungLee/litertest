@@ -28,6 +28,12 @@ export async function DELETE(request: Request) {
     const account = await currentUser(request);
     if (!account) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
+    const migrationResponse = await rest("app_schema_migrations?version=eq.2026-08-28-retain-comments-drop-learning&select=version&limit=1");
+    const migrations = await migrationResponse.json().catch(() => []);
+    if (!migrationResponse.ok || !Array.isArray(migrations) || !migrations.length) {
+      return NextResponse.json({ error: "Q&A 보존을 위한 데이터베이스 업데이트가 아직 적용되지 않았습니다. 관리자가 supabase/retain_comments_remove_learning.sql을 먼저 실행해야 합니다." }, { status: 503 });
+    }
+
     if (account.role === "teacher") {
       const worksResponse = await rest(`literary_works?teacher_id=eq.${account.id}&select=id&limit=1`);
       const works = await worksResponse.json().catch(() => []);
