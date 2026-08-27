@@ -55,6 +55,22 @@ SMTP_SENDER_NAME=수빙니기는 문학시간
 
 설정 후 `docker compose up -d --force-recreate auth`로 인증 컨테이너를 다시 만듭니다. SMTP 비밀번호는 GitHub에 커밋하거나 화면으로 공유하지 않습니다.
 
+### Q&A 답변 알림 이메일
+
+Supabase 가입 확인 메일과 별도로, 문학 앱 컨테이너도 SMTP에 접속해야 학생에게 교사 답변을 알릴 수 있습니다. `/volume1/docker/literature-app/.env`에 같은 SMTP 계정을 다음처럼 추가합니다. Gmail을 사용한다면 일반 로그인 비밀번호가 아니라 앱 비밀번호를 사용하세요.
+
+```dotenv
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=SMTP_사용자
+SMTP_PASS=SMTP_비밀번호_또는_앱_비밀번호
+SMTP_FROM_EMAIL=no-reply@example.com
+SMTP_FROM_NAME=수빙니기는 문학시간
+```
+
+포트가 `465`이면 `SMTP_SECURE=true`, 일반적인 STARTTLS 포트 `587`이면 `SMTP_SECURE=false`로 설정합니다. 환경 변수를 바꾼 뒤 문학 앱 컨테이너를 다시 빌드·실행해야 합니다. `/api/health`의 `replyEmailConfigured`가 `true`이면 필수 항목이 인식된 것입니다.
+
 컨테이너를 빌드하고 실행합니다.
 
 ```bash

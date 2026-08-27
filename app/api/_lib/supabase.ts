@@ -33,6 +33,44 @@ export function deleteAuthUser(userId: string) {
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
   });
 }
+export function authAdmin(path: string, init: RequestInit = {}) {
+  if (!url || !serviceKey) throw new Error("Supabase 관리자 기능을 위한 서버 환경 변수가 설정되지 않았습니다.");
+  return fetch(`${url}/auth/v1/admin/${path}`, {
+    ...init,
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+}
+export async function getAuthUserById(userId: string) {
+  const response = await authAdmin(`users/${encodeURIComponent(userId)}`);
+  if (response.status === 404) return null;
+  const data = await response.json().catch(() => ({})) as { id?: string; email?: string; user?: { id?: string; email?: string } };
+  if (!response.ok) throw new Error("답변 알림을 받을 회원 정보를 확인하지 못했습니다.");
+  return data.user ?? data;
+}
+
+function normalizedNickname(value: unknown) {
+  return String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
+}
+
+export async function nicknameInUse(nickname: string, excludeUserId?: string) {
+  const wanted = normalizedNickname(nickname);
+  if (!wanted) return false;
+
+  const [profilesResponse, usersResponse] = await Promise.all([
+    rest("profiles?select=id,nickname,display_name"),
+    authAdmin("users?page=1&per_page=1000"),
+  ]);
+  const profiles = await profilesResponse.json().catch(() => []);
+  const usersData = await usersResponse.json().catch(() => ({})) as { users?: Array<{ id?: string; user_metadata?: { nickname?: string }; raw_user_meta_data?: { nickname?: string } }> } | Array<{ id?: string; user_metadata?: { nickname?: string }; raw_user_meta_data?: { nickname?: string } }>;
+  if (!profilesResponse.ok || !usersResponse.ok) throw new Error("닉네임 중복 여부를 확인하지 못했습니다.");
+
+  const profileMatch = Array.isArray(profiles) && profiles.some((profile: { id?: string; nickname?: string; display_name?: string }) =>
+    profile.id !== excludeUserId && normalizedNickname(profile.nickname || profile.display_name) === wanted);
+  const users = Array.isArray(usersData) ? usersData : (usersData.users || []);
+  const authMatch = users.some((account) => account.id !== excludeUserId
+    && normalizedNickname(account.user_metadata?.nickname || account.raw_user_meta_data?.nickname) === wanted);
+  return profileMatch || authMatch;
+}
 export async function updateUserMetadata(token: string, data: Record<string, string>) {
   if (!url || !publishableKey) throw new Error("Supabase connection is not configured.");
   const response = await fetch(`${url}/auth/v1/user`, { method: "PUT", headers: { apikey: publishableKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
@@ -67,6 +105,7 @@ export async function requireRole(request: Request, role: "teacher" | "student")
     if (!serviceKey) throw new Error("회원 프로필을 만들기 위한 Supabase 서버 키가 설정되지 않았습니다.");
     const metadataName = String(user.user_metadata?.real_name || "").trim();
     const metadataNickname = [...String(user.user_metadata?.nickname || "").trim()].slice(0, 7).join("");
+    if (metadataNickname && await nicknameInUse(metadataNickname, user.id)) throw new Error("이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.");
     const displayName = user.displayName || metadataNickname || user.email?.split("@")[0] || (role === "teacher" ? "교사" : "학생");
     const profileResponse = await rest("profiles?on_conflict=id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ id: user.id, role, display_name: displayName, ...(metadataName ? { real_name: metadataName } : {}), ...(metadataNickname ? { nickname: metadataNickname } : {}) }) });
     if (!profileResponse.ok) {

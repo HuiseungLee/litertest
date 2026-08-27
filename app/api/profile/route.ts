@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUser, deleteAuthUser, requireRole, rest, updateUserMetadata, userRest } from "../_lib/supabase";
+import { currentUser, deleteAuthUser, nicknameInUse, requireRole, rest, updateUserMetadata, userRest } from "../_lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ export async function PATCH(request: Request) {
     const nickname = String(body.nickname || "").trim();
     if (!realName) throw new Error("이름을 입력해 주세요.");
     if (!nickname || [...nickname].length > 7) throw new Error("닉네임은 1~7글자로 입력해 주세요.");
+    if (await nicknameInUse(nickname, student.id)) throw new Error("이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.");
     let response = await userRest(`profiles?id=eq.${student.id}`, student.token, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ real_name: realName, nickname, display_name: nickname }) });
     let rows = await response.json();
     if (!response.ok && JSON.stringify(rows).includes("nickname")) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userRest } from "../_lib/supabase";
+import { nicknameInUse, userRest } from "../_lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       if (!invite) throw new Error("Teacher signup is not configured yet.");
       if (String(body.teacherInviteCode || "") !== invite) throw new Error("The teacher invite code is incorrect.");
     }
+    if (await nicknameInUse(nickname)) throw new Error("이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.");
     const authResponse = await fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: body.email, password: body.password, data: { role, real_name: realName, nickname } }) });
     const data = await authResponse.json();
     if (!authResponse.ok) {
