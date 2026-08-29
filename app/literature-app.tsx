@@ -27,10 +27,25 @@ const legacyMenuItems = [
 ];
 
 function LegacyLiteratureMenu({ legacyBase }: { legacyBase: string }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const transitionLock = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (transitionLock.current) clearTimeout(transitionLock.current);
+  }, []);
+  const activate = (index: number) => {
+    if (index === activeIndex || transitionLock.current) return;
+    setActiveIndex(index);
+    transitionLock.current = setTimeout(() => { transitionLock.current = null; }, 560);
+  };
+  const reset = () => {
+    if (transitionLock.current) clearTimeout(transitionLock.current);
+    transitionLock.current = null;
+    setActiveIndex(0);
+  };
   return <section className="legacy-literature-menu" aria-labelledby="legacy-menu-title">
     <div className="legacy-menu-title" id="legacy-menu-title"><span className="old-korean-title">{"수\uE8A1니기는"}</span><strong>문학 시간</strong></div>
-    <div className="legacy-options">
-      {legacyMenuItems.map((item, index) => <a className={`legacy-option${index === 0 ? " active" : ""}`} href={item.href.startsWith("#") ? item.href : `${legacyBase}${item.href.replace("/legacy", "")}`} key={item.label} style={{ backgroundImage: `url(${item.image})` }}>
+    <div className="legacy-options" onPointerLeave={reset} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) reset(); }}>
+      {legacyMenuItems.map((item, index) => <a className={`legacy-option${index === activeIndex ? " active" : ""}`} href={item.href.startsWith("#") ? item.href : `${legacyBase}${item.href.replace("/legacy", "")}`} key={item.label} style={{ backgroundImage: `url(${item.image})` }} onPointerEnter={() => activate(index)} onPointerMove={() => activate(index)} onFocus={() => setActiveIndex(index)}>
         <span className="legacy-option-shadow" />
         <span className="legacy-option-label"><b>{item.label}</b><span><strong>{item.title}</strong><small>{item.description}</small></span></span>
       </a>)}
