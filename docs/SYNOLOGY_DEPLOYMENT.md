@@ -117,7 +117,45 @@ docker compose up -d --force-recreate auth
 
 기존 Vercel 주소를 병행 시험해야 한다면 전환이 끝날 때까지 `ADDITIONAL_REDIRECT_URLS`에 그 주소를 함께 유지합니다.
 
-## 업데이트
+## GitHub 푸시 후 자동 업데이트
+
+NAS에서 DSM 작업 스케줄러를 한 번 등록하면 `main` 브랜치의 새 커밋을 확인해 자동으로 가져오고 Docker 컨테이너를 재빌드합니다. NAS가 GitHub로 나가는 연결만 사용하므로 SSH나 별도의 웹훅 포트를 외부에 개방할 필요가 없습니다.
+
+먼저 NAS SSH에서 최신 자동 배포 스크립트를 한 번 받아 시험합니다.
+
+```bash
+cd /volume1/docker/literature-app
+git pull --ff-only
+chmod +x scripts/synology-auto-deploy.sh
+/bin/sh scripts/synology-auto-deploy.sh
+```
+
+마지막 줄에 `Deployment succeeded`가 표시되고 아래 상태 확인이 성공하면 준비가 끝난 것입니다.
+
+```bash
+curl -fsS http://127.0.0.1:3000/api/health
+```
+
+DSM에서 **제어판 → 작업 스케줄러 → 생성 → 예약된 작업 → 사용자 정의 스크립트**를 선택하고 다음처럼 설정합니다.
+
+| 항목 | 값 |
+|---|---|
+| 작업 이름 | Literature GitHub Auto Deploy |
+| 사용자 | root |
+| 일정 | 매일, 1분 또는 5분 간격 |
+| 사용자 정의 스크립트 | `/bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh` |
+
+작업을 저장한 뒤 한 번 수동으로 실행해 성공 여부를 확인합니다. 이후 이 저장소의 `main` 브랜치에 커밋을 푸시하면 설정한 확인 간격 안에 NAS 사이트에도 자동 반영됩니다.
+
+자동 배포 스크립트는 다음 안전장치를 포함합니다.
+
+- 새 커밋이 없고 사이트가 정상이면 빌드하지 않습니다.
+- GitHub 이력과 fast-forward로 연결될 때만 코드를 갱신합니다.
+- NAS 저장소의 추적 파일에 직접 수정한 내용이 있으면 덮어쓰지 않고 중단합니다. `.env`는 Git에서 제외되므로 유지됩니다.
+- 빌드나 상태 확인이 실패하면 성공 커밋으로 기록하지 않아 다음 일정에서 다시 시도합니다.
+- 동시에 두 배포 작업이 실행되지 않도록 잠금 디렉터리를 사용합니다.
+
+## 수동 업데이트
 
 GitHub에 새 커밋을 올린 뒤 NAS SSH에서 실행합니다.
 
