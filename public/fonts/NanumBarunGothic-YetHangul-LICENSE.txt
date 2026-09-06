@@ -1,0 +1,18 @@
+NanumBarunGothic YetHangul font notice
+
+Copyright (c) 2010, NAVER Corporation (https://www.navercorp.com/)
+with Reserved Font Name Nanum, Naver Nanum, NanumBarunGothic,
+and Naver NanumBarunGothic.
+
+This project redistributes the unmodified NanumBarunGothic YetHangul webfont
+provided by NAVER. NAVER fonts are provided free of charge to individuals and
+companies. They may be used commercially, modified, bundled, and redistributed;
+the font file itself may not be sold by itself.
+
+The Font Software is licensed under the SIL Open Font License, Version 1.1.
+The full license and current NAVER font notice are available at:
+
+https://help.naver.com/service/30016/contents/18088
+https://openfontlicense.org/open-font-license-official-text/
+
+No endorsement by NAVER is implied.
