@@ -164,9 +164,15 @@ function Publication({ form, annotations, blocks, extras, publishedAt, discussio
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
   const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
   const publishedDate = publishedAt ? new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "numeric", day: "numeric" }).format(new Date(publishedAt)) : "";
+  const genreIsListed = [...classicGenres, ...modernGenres].some((item) => item.label === form.genre);
   return <><CursorTooltip /><article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
     <div className="literature-header">
-      <div className="genre-pill">{editor ? editableText("genre", form.genre, "갈래") : form.genre}</div>
+      <div className={`genre-pill${editor ? " editor-genre-pill" : ""}`}>{editor ? <select className="genre-select" value={form.genre} onChange={(event) => update?.("genre", event.target.value)} aria-label="문학 갈래 선택">
+        <option value="" disabled>갈래 선택</option>
+        <optgroup label="고전문학">{classicGenres.map((item) => <option value={item.label} key={item.label}>{item.label}</option>)}</optgroup>
+        <optgroup label="현대문학">{modernGenres.map((item) => <option value={item.label} key={item.label}>{item.label}</option>)}</optgroup>
+        {!genreIsListed && form.genre && <optgroup label="기타"><option value={form.genre}>{form.genre}</option></optgroup>}
+      </select> : form.genre}</div>
       <div className={`author-portrait ${editor ? "is-drop-target" : ""}`} onClick={() => editor && imageInput.current?.click()} onDragOver={(e) => { if (editor) e.preventDefault(); }} onDrop={(e) => { if (editor) { e.preventDefault(); onChooseImage?.(e.dataTransfer.files[0]); } }}>
         {form.authorImageUrl ? <img src={form.authorImageUrl} alt="작가 이미지" /> : <span>{editor ? "이미지를 끌어 놓거나 클릭" : (form.author || "작가").slice(0, 1)}</span>}
         {editor && <input ref={imageInput} hidden type="file" accept="image/*" onChange={(e) => onChooseImage?.(e.target.files?.[0])} />}
