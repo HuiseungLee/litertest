@@ -119,7 +119,23 @@ docker compose up -d --force-recreate auth
 
 ## GitHub 푸시 후 자동 업데이트
 
-NAS에서 DSM 작업 스케줄러를 한 번 등록하면 `main` 브랜치의 새 커밋을 확인해 자동으로 가져오고 Docker 컨테이너를 재빌드합니다. NAS가 GitHub로 나가는 연결만 사용하므로 SSH나 별도의 웹훅 포트를 외부에 개방할 필요가 없습니다.
+`.github/workflows/deploy-synology.yml`은 `main` 브랜치의 push 이벤트가 발생하면 GitHub Actions에서 즉시 NAS에 SSH로 접속해 배포 스크립트를 실행합니다. 주기적인 확인 작업을 기다리지 않고 새 커밋을 바로 가져와 Docker 컨테이너를 재빌드합니다.
+
+GitHub 저장소의 **Settings → Secrets and variables → Actions**에 다음 Repository secrets가 필요합니다.
+
+| 이름 | 값 |
+|---|---|
+| `NAS_HOST` | NAS의 외부 호스트 이름 |
+| `NAS_PORT` | NAS SSH 포트 |
+| `NAS_USER` | 배포용 SSH 사용자 |
+| `NAS_SSH_KEY` | 배포용 SSH 비공개 키 |
+| `NAS_KNOWN_HOSTS` | `ssh-keyscan -p <포트> <호스트>` 출력 |
+
+배포용 SSH 사용자는 비밀번호 입력 없이 아래 명령 하나만 관리자 권한으로 실행할 수 있어야 합니다.
+
+```bash
+sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh
+```
 
 먼저 NAS SSH에서 최신 자동 배포 스크립트를 한 번 받아 시험합니다.
 
@@ -136,7 +152,7 @@ chmod +x scripts/synology-auto-deploy.sh
 curl -fsS http://127.0.0.1:3000/api/health
 ```
 
-DSM에서 **제어판 → 작업 스케줄러 → 생성 → 예약된 작업 → 사용자 정의 스크립트**를 선택하고 다음처럼 설정합니다.
+필요하다면 GitHub Actions 장애에 대비한 보조 수단으로 DSM에서 **제어판 → 작업 스케줄러 → 생성 → 예약된 작업 → 사용자 정의 스크립트**를 선택해 주기 확인 작업을 유지할 수 있습니다.
 
 | 항목 | 값 |
 |---|---|
@@ -145,7 +161,7 @@ DSM에서 **제어판 → 작업 스케줄러 → 생성 → 예약된 작업 �
 | 일정 | 매일, 1분 또는 5분 간격 |
 | 사용자 정의 스크립트 | `/bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh` |
 
-작업을 저장한 뒤 한 번 수동으로 실행해 성공 여부를 확인합니다. 이후 이 저장소의 `main` 브랜치에 커밋을 푸시하면 설정한 확인 간격 안에 NAS 사이트에도 자동 반영됩니다.
+작업 스케줄러를 사용한다면 저장한 뒤 한 번 수동으로 실행해 성공 여부를 확인합니다. 기본 자동 배포는 `main` 브랜치 push 직후 GitHub Actions가 실행하며, Actions 화면에서 성공 여부를 확인할 수 있습니다.
 
 자동 배포 스크립트는 다음 안전장치를 포함합니다.
 
