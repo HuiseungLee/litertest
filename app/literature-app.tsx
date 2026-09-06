@@ -299,7 +299,7 @@ function Publication({ form, annotations, blocks, alignments, extras, publishedA
         <h3>{editableText("author", form.author, "작가명", "work-author")}</h3>
         <hr />
         {editor ? <div className="source-citation-editor"><span>〈출전〉</span><input className="publication-input" maxLength={160} value={form.sourceCitation} onChange={(event) => update?.("sourceCitation", event.target.value)} placeholder="예: 고산유고 권6" aria-label="출전" /></div> : form.sourceCitation && <p className="source-citation"><span>〈출전〉</span> {form.sourceCitation}</p>}
-        <p>{editor ? "출판일은 해설을 출판할 때 자동으로 기록됩니다." : (publishedDate ? `출판일 · ${publishedDate}` : "출판일 정보 없음")}</p>
+        <p className="publication-date">{editor ? "출판일은 해설을 출판할 때 자동으로 기록됩니다." : (publishedDate ? `출판일 · ${publishedDate}` : "출판일 정보 없음")}</p>
       </div>
     </div>
     <div className="literature-body">

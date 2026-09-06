@@ -65,3 +65,6 @@
 
 /* Optional source citation shown between the author and publication date. */
 .source-citation-editor{display:flex;align-items:center;gap:5px;margin:0 0 10px;color:#7c8589;font:400 13px 'NanumMyeongjoYetHangul','Gowun Batang',serif}.source-citation-editor>span{flex:0 0 auto}.source-citation-editor .publication-input{min-width:0;padding:3px 5px;color:#687277;font:inherit}.title-block .source-citation{margin:0 0 10px;color:#7c8589;font:400 13px 'NanumMyeongjoYetHangul','Gowun Batang',serif}.source-citation>span{color:#677277}
+
+/* Keep the publication date at the lower-right edge of the work header. */
+.title-block .publication-date{position:absolute;right:4px;bottom:12px;text-align:right}@media(max-width:780px){.title-block .publication-date{position:static;margin-top:14px;text-align:right}}
