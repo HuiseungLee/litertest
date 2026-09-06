@@ -78,17 +78,18 @@ function GenreMenu({ selected, onSelect, legacyBase }: { selected: string; onSel
 }
 
 type PositionedAnnotation = Annotation & { start: number; end: number };
-type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number };
+type AnnotationLayer = "single" | "outer" | "inner" | "deep";
+type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number; layer: AnnotationLayer };
 
-function AnnotationMark({ annotation, rangeStart, rangeEnd, children }: {
-  annotation: PositionedAnnotation; rangeStart: boolean; rangeEnd: boolean; children: ReactNode;
+function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children }: {
+  annotation: PositionedAnnotation; layer: AnnotationLayer; rangeStart: boolean; rangeEnd: boolean; children: ReactNode;
 }) {
   const annotationTone = annotation.tone % toneNames.length;
   const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
     detail: { note: annotation.note, tone: annotationTone, x, y },
   }));
   return <mark
-    className={`poetic-term tone-${annotationTone}`}
+    className={`poetic-term tone-${annotationTone} annotation-layer-${layer}`}
     data-range-start={rangeStart}
     data-range-end={rangeEnd}
     tabIndex={rangeStart ? 0 : -1}
@@ -113,6 +114,13 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
     if (start < 0) return []; phraseOffsets.set(item.phrase, start + item.phrase.length);
     return [{ ...item, start, end: start + item.phrase.length }];
   });
+  const annotationLayers = new Map<string, AnnotationLayer>();
+  exact.forEach((item) => {
+    const itemSpan = item.end - item.start;
+    const overlaps = exact.filter((other) => other.id !== item.id && other.start < item.end && other.end > item.start);
+    const widerCount = overlaps.filter((other) => other.end - other.start > itemSpan).length;
+    annotationLayers.set(item.id, !overlaps.length ? "single" : widerCount === 0 ? "outer" : widerCount === 1 ? "inner" : "deep");
+  });
   let cursor = 0;
   return text.split(/\r?\n/).map((line, lineIndex) => {
     const lineStart = cursor; const lineEnd = lineStart + line.length; cursor = lineEnd + 1;
@@ -124,6 +132,7 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
         end: Math.min(line.length, annotation.end - lineStart),
         span: annotation.end - annotation.start,
         order,
+        layer: annotationLayers.get(annotation.id) || "single",
       }];
     });
     const boundaries = [...new Set([0, line.length, ...matches.flatMap((item) => [item.start, item.end])])].sort((a, b) => a - b);
@@ -139,6 +148,7 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
         const item = active[index];
         content = <AnnotationMark
           annotation={item.annotation}
+          layer={item.layer}
           rangeStart={lineStart + segmentStart === item.annotation.start}
           rangeEnd={lineStart + segmentEnd === item.annotation.end}
         >{content}</AnnotationMark>;
