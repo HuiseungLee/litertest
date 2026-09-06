@@ -40,7 +40,20 @@ jobs:
           printf '%s\n' "$NAS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
+          if ! ssh-keygen -y -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1; then
+            echo '::error title=Synology SSH configuration::NAS_SSH_KEY is not a valid SSH private key.'
+            exit 1
+          fi
+
+          if ! ssh-keygen -F "[$NAS_HOST]:$NAS_PORT" -f "$HOME/.ssh/known_hosts" >/dev/null; then
+            echo '::error title=Synology SSH configuration::NAS_KNOWN_HOSTS does not contain the configured NAS host and port.'
+            exit 1
+          fi
+
+          ssh_error_file="$(mktemp)"
+          set +e
           ssh \
+            -4 \
             -i "$HOME/.ssh/id_ed25519" \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
@@ -49,4 +62,24 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -p "$NAS_PORT" \
             "$NAS_USER@$NAS_HOST" \
-            'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh'
+            'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh' \
+            2>"$ssh_error_file"
+          ssh_status=$?
+          set -e
+
+          if [ "$ssh_status" -ne 0 ]; then
+            if grep -Eq 'Permission denied|no mutual signature algorithm' "$ssh_error_file"; then
+              ssh_failure='The NAS rejected the configured SSH key.'
+            elif grep -Eq 'Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED' "$ssh_error_file"; then
+              ssh_failure='The NAS host key does not match NAS_KNOWN_HOSTS.'
+            elif grep -Eq 'Could not resolve hostname|Name or service not known|Temporary failure in name resolution' "$ssh_error_file"; then
+              ssh_failure='The NAS host name could not be resolved.'
+            elif grep -Eq 'Connection timed out|Operation timed out|No route to host|Connection refused|Connection reset' "$ssh_error_file"; then
+              ssh_failure='The GitHub runner could not reach the NAS SSH port.'
+            else
+              ssh_failure="SSH deployment failed with exit code $ssh_status."
+            fi
+            printf '::error title=Synology SSH deployment::%s\n' "$ssh_failure"
+            cat "$ssh_error_file" >&2
+            exit "$ssh_status"
+          fi
