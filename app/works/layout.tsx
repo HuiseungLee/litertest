@@ -1,19 +1,12 @@
-import type { Metadata } from "next";
-
 const ADSENSE_CLIENT_ID = "ca-pub-3651546052793597";
 const PRIMARY_GA_ID = "G-PVPS1HPY49";
-
-export const metadata: Metadata = {
-  other: {
-    "google-adsense-account": ADSENSE_CLIENT_ID,
-  },
-};
 
 export default function PublishedWorksLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
+      <meta name="google-adsense-account" content={ADSENSE_CLIENT_ID} />
       <script
         async
         {...{ "custom-element": "amp-auto-ads" }}
