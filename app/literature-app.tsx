@@ -190,7 +190,19 @@ function Publication({ form, annotations, blocks, extras, publishedAt, discussio
   onChooseImage?: (file?: File) => void; onSelectSource?: () => void; onSelectModern?: () => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
+  const imageViewerTrigger = useRef<HTMLButtonElement>(null);
   const pageRef = useRef<HTMLElement>(null);
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const closeImageViewer = () => {
+    setImageViewerOpen(false);
+    requestAnimationFrame(() => imageViewerTrigger.current?.focus());
+  };
+  useEffect(() => {
+    if (!imageViewerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [imageViewerOpen]);
   useEffect(() => {
     const page = pageRef.current; const body = page?.querySelector<HTMLElement>(".literature-body");
     if (!body) return;
@@ -228,7 +240,10 @@ function Publication({ form, annotations, blocks, extras, publishedAt, discussio
         {!genreIsListed && form.genre && <optgroup label="기타"><option value={form.genre}>{form.genre}</option></optgroup>}
       </select> : form.genre}</div>
       <div className={`author-portrait ${editor ? "is-drop-target" : ""}`} onClick={() => editor && imageInput.current?.click()} onDragOver={(e) => { if (editor) e.preventDefault(); }} onDrop={(e) => { if (editor) { e.preventDefault(); onChooseImage?.(e.dataTransfer.files[0]); } }}>
-        {form.authorImageUrl ? <img src={form.authorImageUrl} alt="작가 이미지" /> : <span>{editor ? "이미지를 끌어 놓거나 클릭" : (form.author || "작가").slice(0, 1)}</span>}
+        {form.authorImageUrl ? editor
+          ? <img src={form.authorImageUrl} alt="작가 이미지" />
+          : <button ref={imageViewerTrigger} type="button" className="author-image-viewer-trigger" aria-haspopup="dialog" aria-label={`${form.author || "작가"} 이미지 원본 보기`} onClick={(event) => { event.stopPropagation(); setImageViewerOpen(true); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지`} /></button>
+          : <span>{editor ? "이미지를 끌어 놓거나 클릭" : (form.author || "작가").slice(0, 1)}</span>}
         {editor && <input ref={imageInput} hidden type="file" accept="image/*" onChange={(e) => onChooseImage?.(e.target.files?.[0])} />}
       </div>
       <div className="title-block">
@@ -262,7 +277,7 @@ function Publication({ form, annotations, blocks, extras, publishedAt, discussio
         {discussion && <section id="check" className="literature-section qna-section"><div className="section-rule" /><article><h3>Q&amp;A</h3>{discussion}</article></section>}
       </div>
     </div>
-  </article></>;
+  </article>{imageViewerOpen && form.authorImageUrl && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`${form.author || "작가"} 이미지 원본 보기`}><button type="button" className="image-lightbox-surface" autoFocus aria-label="원본 이미지 닫기" onClick={closeImageViewer} onKeyDown={(event) => { if (event.key === "Escape") closeImageViewer(); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지 원본`} /><span className="image-lightbox-close" aria-hidden="true">×</span></button></div>}</>;
 }
 
 export default function LiteratureApp({ initialWorkId }: { initialWorkId?: string }) {
