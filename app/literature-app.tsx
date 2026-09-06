@@ -77,11 +77,36 @@ function GenreMenu({ selected, onSelect, legacyBase }: { selected: string; onSel
   </section>;
 }
 
+type PositionedAnnotation = Annotation & { start: number; end: number };
+type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number };
+
+function AnnotationMark({ annotation, rangeStart, rangeEnd, children }: {
+  annotation: PositionedAnnotation; rangeStart: boolean; rangeEnd: boolean; children: ReactNode;
+}) {
+  const annotationTone = annotation.tone % toneNames.length;
+  const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
+    detail: { note: annotation.note, tone: annotationTone, x, y },
+  }));
+  return <mark
+    className={`poetic-term tone-${annotationTone}`}
+    data-range-start={rangeStart}
+    data-range-end={rangeEnd}
+    tabIndex={rangeStart ? 0 : -1}
+    onPointerEnter={(event) => { event.stopPropagation(); showTooltip(event.clientX, event.clientY); }}
+    onPointerMove={(event) => { event.stopPropagation(); showTooltip(event.clientX, event.clientY); }}
+    onPointerLeave={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+    onFocus={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
+    onBlur={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+  >{children}<span className="term-tooltip">{annotation.note}</span></mark>;
+}
+
 function poem(text: string | undefined, annotations: Annotation[], area: "source" | "modern" = "source") {
   if (!text) return <p className="empty-copy">작품 원문을 입력하거나 불러와 주세요.</p>;
   const phraseOffsets = new Map<string, number>();
-  const exact = annotations.filter((item) => (item.area || "source") === area).flatMap((item) => {
-    if (Number.isInteger(item.start) && Number.isInteger(item.end) && (item.end || 0) > (item.start || 0)) return [item];
+  const exact: PositionedAnnotation[] = annotations.filter((item) => (item.area || "source") === area).flatMap((item) => {
+    if (Number.isInteger(item.start) && Number.isInteger(item.end) && (item.end || 0) > (item.start || 0)) {
+      return [{ ...item, start: item.start as number, end: item.end as number }];
+    }
     // Older saved notes had no selection coordinates. Show only one best-match occurrence,
     // never every identical word, until the teacher saves the note again.
     const from = phraseOffsets.get(item.phrase) || 0; const start = text.indexOf(item.phrase, from);
@@ -91,16 +116,35 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
   let cursor = 0;
   return text.split(/\r?\n/).map((line, lineIndex) => {
     const lineStart = cursor; const lineEnd = lineStart + line.length; cursor = lineEnd + 1;
-    const matches = exact.filter((item) => (item.start || 0) < lineEnd && (item.end || 0) > lineStart).sort((a, b) => (a.start || 0) - (b.start || 0));
-    let position = 0;
-    const pieces: ReactNode[] = [];
-    matches.forEach((item) => {
-      const start = Math.max(0, (item.start || 0) - lineStart); const end = Math.min(line.length, (item.end || 0) - lineStart);
-      if (start > position) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position, start)}</Fragment>);
-      if (end > start) pieces.push(<mark className={`poetic-term tone-${item.tone % toneNames.length}`} key={item.id} tabIndex={0} onMouseMove={(event) => window.dispatchEvent(new CustomEvent("literary-tooltip", { detail: { note: item.note, tone: item.tone % toneNames.length, x: event.clientX, y: event.clientY } }))} onMouseLeave={() => window.dispatchEvent(new Event("literary-tooltip-hide"))}>{line.slice(start, end)}<span className="term-tooltip">{item.note}</span></mark>);
-      position = Math.max(position, end);
+    const matches: LineAnnotation[] = exact.flatMap((annotation, order) => {
+      if (annotation.start >= lineEnd || annotation.end <= lineStart) return [];
+      return [{
+        annotation,
+        start: Math.max(0, annotation.start - lineStart),
+        end: Math.min(line.length, annotation.end - lineStart),
+        span: annotation.end - annotation.start,
+        order,
+      }];
     });
-    if (position < line.length) pieces.push(<Fragment key={`text-${position}`}>{line.slice(position)}</Fragment>);
+    const boundaries = [...new Set([0, line.length, ...matches.flatMap((item) => [item.start, item.end])])].sort((a, b) => a - b);
+    const pieces: ReactNode[] = [];
+    boundaries.slice(0, -1).forEach((segmentStart, segmentIndex) => {
+      const segmentEnd = boundaries[segmentIndex + 1];
+      if (segmentEnd <= segmentStart) return;
+      const active = matches
+        .filter((item) => item.start <= segmentStart && item.end >= segmentEnd)
+        .sort((a, b) => b.span - a.span || a.order - b.order);
+      let content: ReactNode = line.slice(segmentStart, segmentEnd);
+      for (let index = active.length - 1; index >= 0; index -= 1) {
+        const item = active[index];
+        content = <AnnotationMark
+          annotation={item.annotation}
+          rangeStart={lineStart + segmentStart === item.annotation.start}
+          rangeEnd={lineStart + segmentEnd === item.annotation.end}
+        >{content}</AnnotationMark>;
+      }
+      pieces.push(<Fragment key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</Fragment>);
+    });
     return (
     <p className={`poem-line${line ? "" : " stanza-break"}`} key={`${line}-${lineIndex}`}>
       {pieces.length ? pieces : "\u00a0"}
