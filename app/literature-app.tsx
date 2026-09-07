@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { DragEvent as ReactDragEvent, FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
 
 type Role = "teacher" | "student" | null;
 type User = { id: string; email?: string; role: Role; realName?: string; nickname?: string };
@@ -91,19 +91,25 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children }: {
   annotation: PositionedAnnotation; layer: AnnotationLayer; rangeStart: boolean; rangeEnd: boolean; children: ReactNode;
 }) {
   const annotationTone = annotation.tone % toneNames.length;
+  const activate = (active: boolean) => {
+    if (active && document.querySelector<HTMLElement>(".poetic-term.annotation-active")?.dataset.annotationId === annotation.id) return;
+    document.querySelectorAll<HTMLElement>(".poetic-term.annotation-active").forEach((item) => item.classList.remove("annotation-active"));
+    if (active) document.querySelectorAll<HTMLElement>(".poetic-term").forEach((item) => { if (item.dataset.annotationId === annotation.id) item.classList.add("annotation-active"); });
+  };
   const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
     detail: { note: annotation.note, tone: annotationTone, x, y },
   }));
   return <mark
     className={`poetic-term tone-${annotationTone} annotation-layer-${layer}`}
+    data-annotation-id={annotation.id}
     data-range-start={rangeStart}
     data-range-end={rangeEnd}
     tabIndex={rangeStart ? 0 : -1}
-    onPointerEnter={(event) => { event.stopPropagation(); showTooltip(event.clientX, event.clientY); }}
-    onPointerMove={(event) => { event.stopPropagation(); showTooltip(event.clientX, event.clientY); }}
-    onPointerLeave={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
-    onFocus={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
-    onBlur={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+    onPointerEnter={(event) => { event.stopPropagation(); activate(true); showTooltip(event.clientX, event.clientY); }}
+    onPointerMove={(event) => { event.stopPropagation(); activate(true); showTooltip(event.clientX, event.clientY); }}
+    onPointerLeave={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+    onFocus={(event) => { event.stopPropagation(); activate(true); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
+    onBlur={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
   >{children}<span className="term-tooltip" contentEditable={false}>{annotation.note}</span></mark>;
 }
 
@@ -231,6 +237,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
   const imageViewerTrigger = useRef<HTMLButtonElement>(null);
   const sourceEditor = useRef<HTMLDivElement>(null);
   const modernEditor = useRef<HTMLDivElement>(null);
+  const draggedFold = useRef<{ id: string; parent: string } | null>(null);
   const pageRef = useRef<HTMLElement>(null);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [lineSelection, setLineSelection] = useState({ source: { start: 0, end: 0 }, modern: { start: 0, end: 0 } });
@@ -265,7 +272,39 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     : copyWithFolds(value, parent);
   const contentForParent = (parent: string) => parent === "source" ? form.sourceText : parent === "modern" ? blocks.modernTranslation : parent === "theme" ? form.theme : parent === "authorIntro" ? blocks.authorIntro : parent === "expressionFeatures" ? form.expressionFeatures : parent === "deepInquiry" ? blocks.deepInquiry : extras.find((item) => item.id === parent)?.content || "";
   const labelForParent = (parent: string) => parent === "source" ? "작품 원문" : parent === "modern" ? "현대어 풀이" : parent === "theme" ? "주제" : parent === "authorIntro" ? "작가 소개" : parent === "expressionFeatures" ? "표현상의 특징" : parent === "deepInquiry" ? "심화 탐구" : extras.find((item) => item.id === parent)?.title || "하위 목록";
-  const foldDisclosure = (item: FoldSection) => <details className="collapsible-extra" contentEditable={editor ? false : undefined} key={item.id}><summary>{item.title || "소제목"}</summary><div className="collapsible-extra-content"><p className="section-copy">{item.content}</p></div></details>;
+  const clearFoldDropMarker = (root?: HTMLDivElement | null) => {
+    if (!root) return; root.classList.remove("fold-drop-at-start"); root.querySelectorAll(".fold-drop-after").forEach((item) => item.classList.remove("fold-drop-after"));
+  };
+  const foldDropPosition = (root: HTMLDivElement, clientY: number) => {
+    const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line"));
+    const nextLine = lines.findIndex((line) => clientY < line.getBoundingClientRect().top + line.getBoundingClientRect().height / 2);
+    return nextLine < 0 ? lines.length : nextLine;
+  };
+  const showFoldDropMarker = (root: HTMLDivElement, position: number) => {
+    clearFoldDropMarker(root); const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line"));
+    if (position === 0) root.classList.add("fold-drop-at-start"); else lines[position - 1]?.classList.add("fold-drop-after");
+  };
+  const handleFoldDragOver = (area: "source" | "modern", event: ReactDragEvent<HTMLDivElement>) => {
+    if (draggedFold.current?.parent !== area) return; event.preventDefault(); event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (event.clientY < bounds.top + 42) event.currentTarget.scrollTop -= 18;
+    if (event.clientY > bounds.bottom - 42) event.currentTarget.scrollTop += 18;
+    showFoldDropMarker(event.currentTarget, foldDropPosition(event.currentTarget, event.clientY));
+  };
+  const handleFoldDrop = (area: "source" | "modern", event: ReactDragEvent<HTMLDivElement>) => {
+    const moving = draggedFold.current; if (!moving || moving.parent !== area) return; event.preventDefault();
+    const position = foldDropPosition(event.currentTarget, event.clientY); clearFoldDropMarker(event.currentTarget);
+    updateFoldSection?.(moving.id, "position", position); draggedFold.current = null;
+  };
+  const foldDisclosure = (item: FoldSection) => <details
+    className={`collapsible-extra${editor ? " draggable-fold" : ""}`}
+    contentEditable={editor ? false : undefined}
+    draggable={Boolean(editor)}
+    title={editor ? "드래그하여 본문 안의 위치 변경" : undefined}
+    onDragStart={(event) => { if (!editor) return; draggedFold.current = { id: item.id, parent: item.parent }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
+    onDragEnd={() => { clearFoldDropMarker(sourceEditor.current); clearFoldDropMarker(modernEditor.current); draggedFold.current = null; }}
+    key={item.id}
+  ><summary>{item.title || "소제목"}</summary><div className="collapsible-extra-content"><p className="section-copy">{item.content}</p></div></details>;
   const foldInsertions = (parent: string) => {
     const text = contentForParent(parent); const lineCount = text ? text.split(/\r?\n/).length : 0; const insertions = new Map<number, ReactNode[]>();
     foldSections.filter((item) => item.parent === parent).forEach((item) => { const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount); insertions.set(position, [...(insertions.get(position) || []), foldDisclosure(item)]); });
@@ -336,7 +375,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     const placeholder = area === "source" ? "작품 원문을 입력하거나 불러와 주세요." : "현대어 풀이를 입력해 주세요.";
     return <div
       ref={rootRef}
-      className="poem editor-poem wysiwyg-poem-editor"
+      className={`poem editor-poem wysiwyg-poem-editor ${area}-wysiwyg-editor`}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       role="textbox"
@@ -349,6 +388,9 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
       onMouseUp={(event) => captureEditableSelection(area, event.currentTarget)}
       onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureEditableSelection(area, event.currentTarget); }}
       onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
+      onDragOver={(event) => handleFoldDragOver(area, event)}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearFoldDropMarker(event.currentTarget); }}
+      onDrop={(event) => handleFoldDrop(area, event)}
     >{poem(text, annotations, area, alignments[area], foldInsertions(area), true)}</div>;
   };
   const applyAlignment = (area: "source" | "modern", alignment: TextAlignment) => {
@@ -365,7 +407,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
   };
   const publishedDate = publishedAt ? new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "numeric", day: "numeric" }).format(new Date(publishedAt)) : "";
   const genreIsListed = [...classicGenres, ...modernGenres].some((item) => item.label === form.genre);
-  return <><CursorTooltip /><article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`}>
+  return <><CursorTooltip /><article ref={pageRef} className={`published-page ${editor ? "publication-editor" : ""}`} onContextMenu={(event) => { if (!editor) event.preventDefault(); }}>
     <div className="literature-header">
       <div className={`genre-pill${editor ? " editor-genre-pill" : ""}`}>{editor ? <select className="genre-select" value={form.genre} onChange={(event) => update?.("genre", event.target.value)} aria-label="문학 갈래 선택">
         <option value="" disabled>갈래 선택</option>
@@ -412,7 +454,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
         {discussion && <section id="check" className="literature-section qna-section"><div className="section-rule" /><article><h3>Q&amp;A</h3>{discussion}</article></section>}
       </div>
     </div>
-  </article>{imageViewerOpen && form.authorImageUrl && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`${form.author || "작가"} 이미지 원본 보기`}><button type="button" className="image-lightbox-surface" autoFocus aria-label="원본 이미지 닫기" onClick={closeImageViewer} onKeyDown={(event) => { if (event.key === "Escape") closeImageViewer(); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지 원본`} /><span className="image-lightbox-close" aria-hidden="true">×</span></button></div>}</>;
+  </article>{imageViewerOpen && form.authorImageUrl && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`${form.author || "작가"} 이미지 원본 보기`} onContextMenu={(event) => event.preventDefault()}><button type="button" className="image-lightbox-surface" autoFocus aria-label="원본 이미지 닫기" onClick={closeImageViewer} onKeyDown={(event) => { if (event.key === "Escape") closeImageViewer(); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지 원본`} /><span className="image-lightbox-close" aria-hidden="true">×</span></button></div>}</>;
 }
 
 export default function LiteratureApp({ initialWorkId }: { initialWorkId?: string }) {
