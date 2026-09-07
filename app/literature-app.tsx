@@ -106,8 +106,8 @@ type PositionedAnnotation = Annotation & { start: number; end: number };
 type AnnotationLayer = "single" | "outer" | "inner" | "deep";
 type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number; layer: AnnotationLayer };
 
-function annotationGradient(tone: number, layer: AnnotationLayer, alpha = .36) {
-  const inset = layer === "deep" ? 28 : layer === "inner" ? 17 : layer === "single" ? 5 : 2; const color = annotationToneRgb[tone % annotationToneRgb.length];
+function annotationGradient(tone: number, layer: AnnotationLayer, alpha = .27) {
+  const inset = layer === "deep" ? 4 : layer === "inner" ? 2 : 0; const color = annotationToneRgb[tone % annotationToneRgb.length];
   return `linear-gradient(to bottom,transparent 0 ${inset}%,rgba(${color},${alpha}) ${inset}% ${100 - inset}%,transparent ${100 - inset}% 100%)`;
 }
 
@@ -148,7 +148,20 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children, onE
 }
 
 function cleanTextStyle(style: TextStyle) {
-  return Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined && value !== false && value !== "")) as TextStyle;
+  return Object.fromEntries(Object.entries(style).filter(([key, value]) => ["font", "size", "color", "bold", "italic", "underline"].includes(key) && value !== undefined && value !== false && value !== "")) as TextStyle;
+}
+
+function styleAtRange(formats: TextFormatRange[], parent: string, start: number, end: number) {
+  const relevant = formats.filter((item) => item.parent === parent && item.start < end && item.end > start);
+  const boundaries = [...new Set([start, end, ...relevant.flatMap((item) => [Math.max(start, item.start), Math.min(end, item.end)])])].sort((a, b) => a - b);
+  const segments = boundaries.slice(0, -1).map((segmentStart, index) => cleanTextStyle(relevant.filter((item) => item.start <= segmentStart && item.end >= boundaries[index + 1]).reduce<TextStyle>((style, item) => ({ ...style, ...cleanTextStyle(item) }), {})));
+  if (!segments.length) return {};
+  const keys: Array<keyof TextStyle> = ["font", "size", "color", "bold", "italic", "underline"];
+  return keys.reduce<TextStyle>((common, key) => {
+    const value = segments[0][key];
+    if (value !== undefined && segments.every((style) => style[key] === value)) Object.assign(common, { [key]: value });
+    return common;
+  }, {});
 }
 
 function textStyleCss(style?: TextStyle): CSSProperties {
@@ -162,9 +175,9 @@ function formattedInline(text: string, start: number, parent: string, formats: T
   if (!active.length) return text;
   const boundaries = [...new Set([start, end, ...active.flatMap((item) => [Math.max(start, item.start), Math.min(end, item.end)])])].sort((a, b) => a - b);
   return boundaries.slice(0, -1).map((segmentStart, index) => {
-    const segmentEnd = boundaries[index + 1]; const style = active.find((item) => item.start <= segmentStart && item.end >= segmentEnd);
+    const segmentEnd = boundaries[index + 1]; const style = cleanTextStyle(active.filter((item) => item.start <= segmentStart && item.end >= segmentEnd).reduce<TextStyle>((merged, item) => ({ ...merged, ...cleanTextStyle(item) }), {}));
     const content = text.slice(segmentStart - start, segmentEnd - start);
-    return style ? <span className="formatted-text" style={textStyleCss(style)} key={`${segmentStart}-${segmentEnd}`}>{content}</span> : content;
+    return Object.keys(style).length ? <span className="formatted-text" style={textStyleCss(style)} key={`${segmentStart}-${segmentEnd}`}>{content}</span> : content;
   });
 }
 
@@ -200,24 +213,18 @@ function remapAnnotations(annotations: Annotation[], area: "source" | "modern", 
 
 function applyFormatRange(formats: TextFormatRange[], parent: string, start: number, end: number, patch: Partial<TextStyle> | null) {
   if (end <= start) return formats;
-  const other = formats.filter((item) => item.parent !== parent || item.end <= start || item.start >= end);
-  const overlapping = formats.filter((item) => item.parent === parent && item.start < end && item.end > start);
-  const boundaries = [...new Set([start, end, ...overlapping.flatMap((item) => [Math.max(start, item.start), Math.min(end, item.end)])])].sort((a, b) => a - b);
-  const fragments: TextFormatRange[] = [];
-  overlapping.forEach((item) => {
-    if (item.start < start) fragments.push({ ...item, end: start });
-    if (item.end > end) fragments.push({ ...item, start: end });
+  const parentFormats = formats.filter((item) => item.parent === parent && item.end > item.start);
+  const boundaries = [...new Set([start, end, ...parentFormats.flatMap((item) => [item.start, item.end])])].sort((a, b) => a - b);
+  const rebuilt = boundaries.slice(0, -1).flatMap((segmentStart, index) => {
+    const segmentEnd = boundaries[index + 1];
+    const base = cleanTextStyle(parentFormats.filter((item) => item.start <= segmentStart && item.end >= segmentEnd).reduce<TextStyle>((style, item) => ({ ...style, ...cleanTextStyle(item) }), {}));
+    const selected = segmentStart >= start && segmentEnd <= end;
+    const style = selected ? (patch === null ? {} : cleanTextStyle({ ...base, ...patch })) : base;
+    return Object.keys(style).length ? [{ id: crypto.randomUUID(), parent, start: segmentStart, end: segmentEnd, ...style }] : [];
   });
-  if (patch) boundaries.slice(0, -1).forEach((segmentStart, index) => {
-    const segmentEnd = boundaries[index + 1]; const existing = overlapping.find((item) => item.start <= segmentStart && item.end >= segmentEnd);
-    const style = cleanTextStyle({ ...(existing || {}), ...patch });
-    delete (style as Partial<TextFormatRange>).id; delete (style as Partial<TextFormatRange>).parent; delete (style as Partial<TextFormatRange>).start; delete (style as Partial<TextFormatRange>).end;
-    if (Object.keys(style).length) fragments.push({ id: crypto.randomUUID(), parent, start: segmentStart, end: segmentEnd, ...style });
-  });
-  const sorted = [...other, ...fragments].sort((a, b) => a.parent.localeCompare(b.parent) || a.start - b.start || a.end - b.end);
+  const sorted = [...formats.filter((item) => item.parent !== parent), ...rebuilt].sort((a, b) => a.parent.localeCompare(b.parent) || a.start - b.start || a.end - b.end);
   return sorted.reduce<TextFormatRange[]>((merged, item) => {
     const previous = merged.at(-1); const left = cleanTextStyle(previous || {}); const right = cleanTextStyle(item);
-    ["id", "parent", "start", "end"].forEach((key) => { delete (left as Record<string, unknown>)[key]; delete (right as Record<string, unknown>)[key]; });
     if (previous && previous.parent === item.parent && previous.end === item.start && JSON.stringify(left) === JSON.stringify(right)) previous.end = item.end; else merged.push({ ...item });
     return merged;
   }, []);
@@ -309,8 +316,8 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
         .filter((item) => item.start <= segmentStart && item.end >= segmentEnd)
         .sort((a, b) => b.span - a.span || a.order - b.order);
       const globalStart = lineStart + segmentStart; const globalEnd = lineStart + segmentEnd;
-      const format = lineFormats.find((item) => item.start <= globalStart && item.end >= globalEnd);
-      let content: ReactNode = format ? <span className="formatted-text" style={textStyleCss(format)}>{line.slice(segmentStart, segmentEnd)}</span> : line.slice(segmentStart, segmentEnd);
+      const format = cleanTextStyle(lineFormats.filter((item) => item.start <= globalStart && item.end >= globalEnd).reduce<TextStyle>((merged, item) => ({ ...merged, ...cleanTextStyle(item) }), {}));
+      let content: ReactNode = Object.keys(format).length ? <span className="formatted-text" style={textStyleCss(format)}>{line.slice(segmentStart, segmentEnd)}</span> : line.slice(segmentStart, segmentEnd);
       for (let index = active.length - 1; index >= 0; index -= 1) {
         const item = active[index];
         content = <AnnotationMark
@@ -321,8 +328,10 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
           onEdit={editable ? onEditAnnotation : undefined}
         >{content}</AnnotationMark>;
       }
-      const background = active.map((item) => annotationGradient(item.annotation.tone, item.layer)).join(",");
-      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
+      const background = active.map((item) => annotationGradient(item.annotation.tone, item.layer, .27)).join(",");
+      const roundedStart = active.length > 0 && active.every((item) => item.annotation.start === globalStart);
+      const roundedEnd = active.length > 0 && active.every((item) => item.annotation.end === globalEnd);
+      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} data-rounded-start={roundedStart || undefined} data-rounded-end={roundedEnd || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
     });
     return <Fragment key={`line-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`} data-line-index={lineIndex} data-line-start={lineStart}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
   });
@@ -369,6 +378,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
   const [pptDropActive, setPptDropActive] = useState(false);
   const [lineSelection, setLineSelection] = useState({ source: { start: 0, end: 0 }, modern: { start: 0, end: 0 } });
   const [formatSelection, setFormatSelection] = useState({ parent: "", start: 0, end: 0 });
+  const [colorDrafts, setColorDrafts] = useState<Record<string, string>>({});
   const closeImageViewer = () => {
     setImageViewerOpen(false);
     requestAnimationFrame(() => imageViewerTrigger.current?.focus());
@@ -399,23 +409,31 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
   const textStyleToolbar = (key: string, label: string, area?: "source" | "modern") => {
     if (!editor) return null;
     const selectedRange = formatSelection.parent === key && formatSelection.end > formatSelection.start ? formatSelection : undefined;
-    const style: TextStyle = selectedRange ? (textFormats.find((item) => item.parent === key && item.start <= selectedRange.start && item.end >= selectedRange.end) || {}) : {};
+    const style: TextStyle = selectedRange ? styleAtRange(textFormats, key, selectedRange.start, selectedRange.end) : {};
+    const selectionKey = selectedRange ? `${key}:${selectedRange.start}:${selectedRange.end}` : `${key}:none`;
+    const colorValue = colorDrafts[selectionKey] ?? style.color ?? "#424242";
+    const applyColor = (value: string) => {
+      setColorDrafts((now) => ({ ...now, [selectionKey]: value }));
+      if (selectedRange && /^#[0-9a-f]{6}$/i.test(value)) updateTextFormat?.(key, selectedRange.start, selectedRange.end, { color: value.toLowerCase() });
+    };
     const selected = area ? lineSelection[area] : undefined;
     const selectedAlignments = area && selected ? Array.from({ length: selected.end - selected.start + 1 }, (_, offset) => alignments[area][selected.start + offset] || "left") : [];
     const alignmentOptions: Array<{ value: TextAlignment; label: string }> = [{ value: "left", label: "왼쪽 정렬" }, { value: "center", label: "가운데 정렬" }, { value: "right", label: "오른쪽 정렬" }];
     return <div className="text-style-toolbar" contentEditable={false} role="toolbar" aria-label={`${label} 편집 도구`}>
-      <span className="text-style-heading">편집 도구</span>
-      <select disabled={!selectedRange} value={style.font || ""} aria-label={`${label} 선택 영역 글꼴`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { font: (event.target.value || undefined) as TextFont | undefined })}>
-        <option value="">기본 글꼴</option>{textFontOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-      </select>
-      <select disabled={!selectedRange} value={style.size || ""} aria-label={`${label} 선택 영역 글자 크기`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { size: event.target.value ? Number(event.target.value) : undefined })}>
-        <option value="">기본 크기</option>{[12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 28, 32].map((size) => <option value={size} key={size}>{size}px</option>)}
-      </select>
-      <label className="text-color-control" title="선택 영역 글자 색상"><span>글자색</span><input disabled={!selectedRange} type="color" value={style.color || "#424242"} aria-label={`${label} 선택 영역 글자 색상`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { color: event.target.value })} /></label>
-      <span className="inline-format-buttons"><button type="button" disabled={!selectedRange} aria-label="굵게" title="굵게" aria-pressed={Boolean(style.bold)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { bold: !style.bold })}><b>가</b></button><button type="button" disabled={!selectedRange} aria-label="기울임" title="기울임" aria-pressed={Boolean(style.italic)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { italic: !style.italic })}><i>가</i></button><button type="button" disabled={!selectedRange} aria-label="밑줄" title="밑줄" aria-pressed={Boolean(style.underline)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { underline: !style.underline })}><u>가</u></button></span>
-      <button type="button" disabled={!selectedRange} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, null)}>서식 지우기</button>
-      <small className="format-selection-status">{selectedRange ? `${selectedRange.end - selectedRange.start}자 선택` : "본문을 드래그해 선택"}</small>
-      {area && selected && <span className="toolbar-alignment"><b>선택한 줄 정렬</b>{alignmentOptions.map((item) => <button key={item.value} type="button" className={`align-${item.value}`} aria-label={item.label} title={item.label} aria-pressed={selectedAlignments.every((value) => value === item.value)} onMouseDown={(event) => event.preventDefault()} onClick={() => applyAlignment(area, item.value)}><span aria-hidden="true">≡</span></button>)}<small>{selected.start === selected.end ? `${selected.start + 1}행` : `${selected.start + 1}–${selected.end + 1}행`}</small></span>}
+      <div className="toolbar-row toolbar-style-row"><span className="text-style-heading">글자 서식</span>
+        <select disabled={!selectedRange} value={style.font || ""} aria-label={`${label} 선택 영역 글꼴`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { font: (event.target.value || undefined) as TextFont | undefined })}>
+          <option value="">기본 글꼴</option>{textFontOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+        </select>
+        <select disabled={!selectedRange} value={style.size || ""} aria-label={`${label} 선택 영역 글자 크기`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { size: event.target.value ? Number(event.target.value) : undefined })}>
+          <option value="">기본 크기</option>{[12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 28, 32].map((size) => <option value={size} key={size}>{size}px</option>)}
+        </select>
+        <label className="text-color-control" title="선택 영역 글자 색상"><span>글자색</span><input disabled={!selectedRange} type="color" value={/^#[0-9a-f]{6}$/i.test(colorValue) ? colorValue : "#424242"} aria-label={`${label} 선택 영역 글자색 선택`} onChange={(event) => applyColor(event.target.value)} /><input disabled={!selectedRange} className="text-color-hex" value={colorValue} maxLength={7} spellCheck={false} aria-label={`${label} 선택 영역 글자색 코드`} placeholder="#0000ff" onChange={(event) => applyColor(event.target.value)} onBlur={() => { if (!/^#[0-9a-f]{6}$/i.test(colorValue)) setColorDrafts((now) => ({ ...now, [selectionKey]: style.color || "#424242" })); }} /></label>
+      </div>
+      <div className="toolbar-row toolbar-action-row"><span className="inline-format-buttons"><button type="button" disabled={!selectedRange} aria-label="굵게" title="굵게" aria-pressed={Boolean(style.bold)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { bold: !style.bold })}><b>가</b></button><button type="button" disabled={!selectedRange} aria-label="기울임" title="기울임" aria-pressed={Boolean(style.italic)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { italic: !style.italic })}><i>가</i></button><button type="button" disabled={!selectedRange} aria-label="밑줄" title="밑줄" aria-pressed={Boolean(style.underline)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { underline: !style.underline })}><u>가</u></button></span>
+        <button type="button" className="clear-format-button" disabled={!selectedRange} onMouseDown={(event) => event.preventDefault()} onClick={() => { if (!selectedRange) return; updateTextFormat?.(key, selectedRange.start, selectedRange.end, null); setColorDrafts((now) => { const next = { ...now }; delete next[selectionKey]; return next; }); }}>서식 지우기</button>
+        <small className="format-selection-status">{selectedRange ? `${selectedRange.end - selectedRange.start}자 선택` : "본문을 드래그해 선택"}</small>
+        {area && selected && <span className="toolbar-alignment"><b>선택한 줄 정렬</b>{alignmentOptions.map((item) => <button key={item.value} type="button" className={`align-${item.value}`} aria-label={item.label} title={item.label} aria-pressed={selectedAlignments.every((value) => value === item.value)} onMouseDown={(event) => event.preventDefault()} onClick={() => applyAlignment(area, item.value)}><span aria-hidden="true">≡</span></button>)}<small>{selected.start === selected.end ? `${selected.start + 1}행` : `${selected.start + 1}–${selected.end + 1}행`}</small></span>}
+      </div>
     </div>;
   };
   const editableText = (key: keyof typeof blankForm, value: string, placeholder: string, className = "") => editor
@@ -509,7 +527,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
     const selected = window.getSelection(); if (!selected?.rangeCount) return;
     const range = selected.getRangeAt(0); if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
     const text = editableValue(root); const start = Math.min(offsetAtBoundary(root, range.startContainer, range.startOffset), text.length); const end = Math.min(offsetAtBoundary(root, range.endContainer, range.endOffset), text.length);
-    setFormatSelection({ parent, start: Math.min(start, end), end: Math.max(start, end) });
+    setColorDrafts({}); setFormatSelection({ parent, start: Math.min(start, end), end: Math.max(start, end) });
   };
   const editablePlainBlock = (text: string, parent: string, placeholder: string, label: string, onChange: (value: string) => void) => {
     const lines = text ? text.split(/\r?\n/) : [""]; const insertions = foldInsertions(parent); let offset = 0;
@@ -558,7 +576,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
       start: (text.slice(0, start).match(/\n/g) || []).length,
       end: (text.slice(0, lineEnd).match(/\n/g) || []).length,
     } }));
-    setFormatSelection({ parent: area, start: Math.min(start, end), end: Math.max(start, end) });
+    setColorDrafts({}); setFormatSelection({ parent: area, start: Math.min(start, end), end: Math.max(start, end) });
     const selection = { start, end, phrase: text.slice(start, end) };
     if (area === "source") onSelectSource?.(selection); else onSelectModern?.(selection);
   };
