@@ -13,14 +13,23 @@ type TextAlignment = "left" | "center" | "right";
 type LineAlignmentMap = Record<string, TextAlignment>;
 type TextAlignments = { source: LineAlignmentMap; modern: LineAlignmentMap };
 type EditorTextSelection = { start: number; end: number; phrase: string };
+type TextFont = "myeongjo" | "barun" | "gowun" | "pretendard";
+type TextStyle = { font?: TextFont; size?: number; color?: string };
+type TextStyles = Record<string, TextStyle>;
 type Work = {
   id: string; title: string; author?: string; genre?: string; theme?: string; summary?: string;
   source_text?: string; expression_features?: string; commentary: string; published_at?: string;
-  generated_result?: { annotations?: Annotation[]; extraSections?: ExtraSection[]; foldSections?: FoldSection[]; authorImageUrl?: string; sourceCitation?: string; editorBlocks?: EditorBlocks; lineAlignments?: Partial<TextAlignments> };
+  generated_result?: { annotations?: Annotation[]; extraSections?: ExtraSection[]; foldSections?: FoldSection[]; authorImageUrl?: string; sourceCitation?: string; editorBlocks?: EditorBlocks; lineAlignments?: Partial<TextAlignments>; textStyles?: TextStyles };
 };
 type WorkComment = { id: string; parent_id?: string | null; user_id: string; author_role: "teacher" | "student"; author_name: string; body: string; created_at: string };
 
 const toneNames = ["파랑", "초록", "주황", "보라", "분홍", "무채색", "연보라", "빨강", "노랑", "청록"];
+const textFontOptions: Array<{ value: TextFont; label: string; family: string }> = [
+  { value: "myeongjo", label: "나눔명조 옛한글", family: "'NanumMyeongjoYetHangul','Gowun Batang',serif" },
+  { value: "barun", label: "나눔바른고딕 옛한글", family: "'NanumBarunGothicYetHangul',Pretendard,sans-serif" },
+  { value: "gowun", label: "고운바탕", family: "'Gowun Batang',serif" },
+  { value: "pretendard", label: "프리텐다드", family: "Pretendard,system-ui,sans-serif" },
+];
 const emptyBlocks: EditorBlocks = { modernTranslation: "", modernTranslationHidden: false, authorIntro: "", deepInquiry: "" };
 const emptyAlignments = (): TextAlignments => ({ source: {}, modern: {} });
 const blankForm = { title: "", author: "", sourceCitation: "", genre: "현대시", sourceText: "", theme: "", expressionFeatures: "", summary: "", commentary: "", authorImageUrl: "" };
@@ -224,11 +233,12 @@ function QandA({ comments, user, value, loading, onChange, onSubmit, onReply, on
   </div>;
 }
 
-function Publication({ form, annotations, blocks, alignments, extras, foldSections, publishedAt, discussion, editor, sourceLoading, update, updateBlock, updateAlignment, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, removeAnnotation, onChooseImage, onSelectSource, onSelectModern, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
-  form: typeof blankForm; annotations: Annotation[]; blocks: EditorBlocks; alignments: TextAlignments; extras: ExtraSection[]; foldSections: FoldSection[]; editor?: boolean;
+function Publication({ form, annotations, blocks, alignments, textStyles, extras, foldSections, publishedAt, discussion, editor, sourceLoading, update, updateBlock, updateAlignment, updateTextStyle, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, removeAnnotation, onChooseImage, onSelectSource, onSelectModern, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
+  form: typeof blankForm; annotations: Annotation[]; blocks: EditorBlocks; alignments: TextAlignments; textStyles: TextStyles; extras: ExtraSection[]; foldSections: FoldSection[]; editor?: boolean;
   publishedAt?: string; discussion?: ReactNode; sourceLoading?: boolean;
   update?: (key: keyof typeof blankForm, value: string) => void; updateBlock?: (key: keyof EditorBlocks, value: string) => void;
   updateAlignment?: (area: "source" | "modern", startLine: number, endLine: number, alignment: TextAlignment) => void;
+  updateTextStyle?: (key: string, style: TextStyle) => void;
   addExtra?: (group: Group) => void; removeExtra?: (id: string) => void; updateExtra?: (id: string, key: "title" | "content", value: string) => void;
   addFoldSection?: (parent: string) => void; removeFoldSection?: (id: string) => void; updateFoldSection?: (id: string, key: "title" | "content" | "position", value: string | number) => void; removeAnnotation?: (id: string) => void;
   onChooseImage?: (file?: File) => void; onSelectSource?: (selection: EditorTextSelection) => void; onSelectModern?: (selection: EditorTextSelection) => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
@@ -264,11 +274,29 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     const frame = requestAnimationFrame(align); const observer = new ResizeObserver(align); observer.observe(body); window.addEventListener("resize", align);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", align); };
   }, [form.sourceText, form.theme, form.expressionFeatures, blocks.modernTranslation, blocks.modernTranslationHidden, blocks.authorIntro, blocks.deepInquiry, extras, foldSections, annotations]);
+  const styleFor = (key: string) => {
+    const style = textStyles[key] || {}; const font = textFontOptions.find((item) => item.value === style.font);
+    return { fontFamily: font?.family, fontSize: style.size ? `${style.size}px` : undefined, color: style.color || undefined };
+  };
+  const textStyleToolbar = (key: string, label: string) => {
+    if (!editor) return null; const style = textStyles[key] || {};
+    return <div className="text-style-toolbar" contentEditable={false} role="toolbar" aria-label={`${label} 글자 서식`}>
+      <span>{label} 서식</span>
+      <select value={style.font || ""} aria-label={`${label} 글꼴`} onChange={(event) => updateTextStyle?.(key, { ...style, font: (event.target.value || undefined) as TextFont | undefined })}>
+        <option value="">현재 기본 글꼴</option>{textFontOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+      </select>
+      <select value={style.size || ""} aria-label={`${label} 글자 크기`} onChange={(event) => updateTextStyle?.(key, { ...style, size: event.target.value ? Number(event.target.value) : undefined })}>
+        <option value="">기본 크기</option>{[12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 28, 32].map((size) => <option value={size} key={size}>{size}px</option>)}
+      </select>
+      <label className="text-color-control" title="글자 색상"><span>글자색</span><input type="color" value={style.color || "#424242"} aria-label={`${label} 글자 색상`} onChange={(event) => updateTextStyle?.(key, { ...style, color: event.target.value })} /></label>
+      <button type="button" disabled={!style.font && !style.size && !style.color} onClick={() => updateTextStyle?.(key, {})}>기본값</button>
+    </div>;
+  };
   const editableText = (key: keyof typeof blankForm, value: string, placeholder: string, className = "") => editor
     ? <input className={`publication-input ${className}`} value={value} onChange={(e) => update?.(key, e.target.value)} placeholder={placeholder} aria-label={placeholder} />
     : <>{value || placeholder}</>;
   const editableBlock = (key: keyof EditorBlocks, value: string, placeholder: string, parent: string) => editor
-    ? <textarea className="section-editor" value={value} onChange={(e) => updateBlock?.(key, e.target.value)} placeholder={placeholder} />
+    ? editablePlainBlock(value, parent, placeholder, labelForParent(parent), (next) => updateBlock?.(key, next))
     : copyWithFolds(value, parent);
   const contentForParent = (parent: string) => parent === "source" ? form.sourceText : parent === "modern" ? blocks.modernTranslation : parent === "theme" ? form.theme : parent === "authorIntro" ? blocks.authorIntro : parent === "expressionFeatures" ? form.expressionFeatures : parent === "deepInquiry" ? blocks.deepInquiry : extras.find((item) => item.id === parent)?.content || "";
   const labelForParent = (parent: string) => parent === "source" ? "작품 원문" : parent === "modern" ? "현대어 풀이" : parent === "theme" ? "주제" : parent === "authorIntro" ? "작가 소개" : parent === "expressionFeatures" ? "표현상의 특징" : parent === "deepInquiry" ? "심화 탐구" : extras.find((item) => item.id === parent)?.title || "하위 목록";
@@ -276,54 +304,56 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     if (!root) return; root.classList.remove("fold-drop-at-start"); root.querySelectorAll(".fold-drop-after").forEach((item) => item.classList.remove("fold-drop-after"));
   };
   const foldDropPosition = (root: HTMLDivElement, clientY: number) => {
-    const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line"));
+    const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line,:scope > .section-copy-line"));
     const nextLine = lines.findIndex((line) => clientY < line.getBoundingClientRect().top + line.getBoundingClientRect().height / 2);
     return nextLine < 0 ? lines.length : nextLine;
   };
   const showFoldDropMarker = (root: HTMLDivElement, position: number) => {
-    clearFoldDropMarker(root); const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line"));
+    clearFoldDropMarker(root); const lines = Array.from(root.querySelectorAll<HTMLElement>(":scope > .poem-line,:scope > .section-copy-line"));
     if (position === 0) root.classList.add("fold-drop-at-start"); else lines[position - 1]?.classList.add("fold-drop-after");
   };
-  const handleFoldDragOver = (area: "source" | "modern", event: ReactDragEvent<HTMLDivElement>) => {
-    if (draggedFold.current?.parent !== area) return; event.preventDefault(); event.dataTransfer.dropEffect = "move";
+  const handleFoldDragOver = (parent: string, event: ReactDragEvent<HTMLDivElement>) => {
+    if (draggedFold.current?.parent !== parent) return; event.preventDefault(); event.dataTransfer.dropEffect = "move";
     const bounds = event.currentTarget.getBoundingClientRect();
     if (event.clientY < bounds.top + 42) event.currentTarget.scrollTop -= 18;
     if (event.clientY > bounds.bottom - 42) event.currentTarget.scrollTop += 18;
     showFoldDropMarker(event.currentTarget, foldDropPosition(event.currentTarget, event.clientY));
   };
-  const handleFoldDrop = (area: "source" | "modern", event: ReactDragEvent<HTMLDivElement>) => {
-    const moving = draggedFold.current; if (!moving || moving.parent !== area) return; event.preventDefault();
+  const handleFoldDrop = (parent: string, event: ReactDragEvent<HTMLDivElement>) => {
+    const moving = draggedFold.current; if (!moving || moving.parent !== parent) return; event.preventDefault();
     const position = foldDropPosition(event.currentTarget, event.clientY); clearFoldDropMarker(event.currentTarget);
     updateFoldSection?.(moving.id, "position", position); draggedFold.current = null;
   };
-  const foldDisclosure = (item: FoldSection) => <details
-    className={`collapsible-extra${editor ? " draggable-fold" : ""}`}
-    contentEditable={editor ? false : undefined}
-    draggable={Boolean(editor)}
-    title={editor ? "드래그하여 본문 안의 위치 변경" : undefined}
-    onDragStart={(event) => { if (!editor) return; draggedFold.current = { id: item.id, parent: item.parent }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
-    onDragEnd={() => { clearFoldDropMarker(sourceEditor.current); clearFoldDropMarker(modernEditor.current); draggedFold.current = null; }}
-    key={item.id}
-  ><summary>{item.title || "소제목"}</summary><div className="collapsible-extra-content"><p className="section-copy">{item.content}</p></div></details>;
+  const foldDisclosure = (item: FoldSection) => {
+    const lineCount = contentForParent(item.parent) ? contentForParent(item.parent).split(/\r?\n/).length : 0;
+    const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount);
+    const finishDrag = () => { pageRef.current?.querySelectorAll<HTMLDivElement>(".wysiwyg-block-editor").forEach(clearFoldDropMarker); draggedFold.current = null; };
+    return <details className={`collapsible-extra${editor ? " draggable-fold" : ""}`} contentEditable={editor ? false : undefined} key={item.id}>
+      <summary>
+        {editor && <span className="fold-drag-handle" draggable title="드래그하여 본문 안의 위치 변경" aria-label="접이식 소제목 위치 이동" onDragStart={(event) => { draggedFold.current = { id: item.id, parent: item.parent }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }} onDragEnd={finishDrag}>⋮⋮</span>}
+        {editor ? <span className="fold-inline-title" contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder="소제목" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain").replace(/\r?\n/g, " ")); }} onBlur={(event) => updateFoldSection?.(item.id, "title", event.currentTarget.innerText.replace(/\r?\n/g, " ").trim())}>{item.title}</span> : (item.title || "소제목")}
+        {editor && <span className="fold-inline-actions" contentEditable={false} onClick={(event) => event.stopPropagation()}><button type="button" disabled={position === 0} title="한 행 위로 이동" aria-label="한 행 위로 이동" onClick={() => updateFoldSection?.(item.id, "position", position - 1)}>↑</button><button type="button" disabled={position === lineCount} title="한 행 아래로 이동" aria-label="한 행 아래로 이동" onClick={() => updateFoldSection?.(item.id, "position", position + 1)}>↓</button><button type="button" className="fold-inline-delete" onClick={() => removeFoldSection?.(item.id)}>삭제</button></span>}
+      </summary>
+      <div className="collapsible-extra-content">
+        {editor && textStyleToolbar(`fold:${item.id}`, item.title || "접이식 소제목")}
+        {editor ? <div className="section-copy fold-inline-content" style={styleFor(`fold:${item.id}`)} contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder="내용을 작성하세요." onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }} onBlur={(event) => updateFoldSection?.(item.id, "content", event.currentTarget.innerText.replace(/\r\n/g, "\n"))}>{item.content}</div> : <p className="section-copy" style={styleFor(`fold:${item.id}`)}>{item.content}</p>}
+      </div>
+    </details>;
+  };
   const foldInsertions = (parent: string) => {
     const text = contentForParent(parent); const lineCount = text ? text.split(/\r?\n/).length : 0; const insertions = new Map<number, ReactNode[]>();
     foldSections.filter((item) => item.parent === parent).forEach((item) => { const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount); insertions.set(position, [...(insertions.get(position) || []), foldDisclosure(item)]); });
     return insertions;
   };
-  const foldEditors = (parent: string) => {
-    if (!editor) return null;
-    const text = contentForParent(parent); const lines = text ? text.split(/\r?\n/) : []; const lineCount = lines.length;
-    return <>{foldSections.filter((item) => item.parent === parent).map((item) => { const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount); return <div className="fold-section-editor" key={item.id}><div className="fold-section-controls"><span>{labelForParent(parent)} 안의 접이식 소제목</span><select value={position} aria-label={`${item.title || "접이식 소제목"} 본문 내 위치`} onChange={(event) => updateFoldSection?.(item.id, "position", Number(event.target.value))}>{Array.from({ length: lineCount + 1 }, (_, index) => <option value={index} key={index}>{index === 0 ? "내용 맨 앞" : `${index}행 뒤${index === lineCount ? " · 맨 끝" : ` · ${lines[index - 1].trim().slice(0, 18) || "빈 행"}`}`}</option>)}</select><button type="button" disabled={position === 0} aria-label="한 행 위로 이동" title="한 행 위로 이동" onClick={() => updateFoldSection?.(item.id, "position", position - 1)}>↑</button><button type="button" disabled={position === lineCount} aria-label="한 행 아래로 이동" title="한 행 아래로 이동" onClick={() => updateFoldSection?.(item.id, "position", position + 1)}>↓</button><button type="button" className="fold-delete" onClick={() => removeFoldSection?.(item.id)}>삭제</button></div><input value={item.title} aria-label="접이식 소제목" onChange={(event) => updateFoldSection?.(item.id, "title", event.target.value)} /><textarea value={item.content} aria-label="접이식 소제목 내용" onChange={(event) => updateFoldSection?.(item.id, "content", event.target.value)} /></div>; })}</>;
-  };
   const copyWithFolds = (text: string, parent: string, fallback = "내용이 아직 등록되지 않았습니다.") => {
     const displayed = text || fallback; const insertions = foldInsertions(parent); const lines = displayed.split(/\r?\n/);
-    return <div className="section-copy section-copy-with-folds">{insertions.get(0)}{lines.map((line, index) => <Fragment key={`${parent}-${index}`}><span className="section-copy-line">{line || "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>)}</div>;
+    return <div className="section-copy section-copy-with-folds" style={styleFor(parent)}>{insertions.get(0)}{lines.map((line, index) => <Fragment key={`${parent}-${index}`}><span className="section-copy-line">{line || "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>)}</div>;
   };
   const addFold = (parent: string) => editor && <button type="button" className="add-inline add-collapsible" onClick={() => addFoldSection?.(parent)}>+ 접이식 소제목 추가</button>;
   const extra = (group: Group) => extras.filter((item) => item.group === group).map((item) => <div className="extra-block" key={item.id}>
     {editor ? <input value={item.title} aria-label="하위 항목 제목" onChange={(event) => updateExtra?.(item.id, "title", event.target.value)} /> : <h3>{item.title}</h3>}
-    {editor ? <textarea value={item.content} aria-label="하위 항목 내용" onChange={(event) => updateExtra?.(item.id, "content", event.target.value)} /> : copyWithFolds(item.content, item.id, "")}
-    {editor && <button type="button" className="delete-inline" onClick={() => removeExtra?.(item.id)}>삭제</button>}{foldEditors(item.id)}{addFold(item.id)}
+    {editor ? editablePlainBlock(item.content, item.id, "내용을 작성하세요.", item.title || "하위 항목", (next) => updateExtra?.(item.id, "content", next)) : copyWithFolds(item.content, item.id, "")}
+    {editor && <button type="button" className="delete-inline" onClick={() => removeExtra?.(item.id)}>삭제</button>}{addFold(item.id)}
   </div>);
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
   const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
@@ -341,6 +371,26 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
       return [raw === " " ? "" : raw.replace(/\n$/, "")];
     });
     return lines.join("\n");
+  };
+  const editablePlainBlock = (text: string, parent: string, placeholder: string, label: string, onChange: (value: string) => void) => {
+    const lines = text ? text.split(/\r?\n/) : [""]; const insertions = foldInsertions(parent);
+    return <>{textStyleToolbar(parent, label)}<div
+      className="section-copy section-copy-with-folds wysiwyg-text-editor wysiwyg-block-editor"
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      aria-label={`${label} 직접 편집`}
+      style={styleFor(parent)}
+      data-empty={text ? "false" : "true"}
+      data-placeholder={placeholder}
+      onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
+      onBlur={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; if (next !== text) onChange(next); }}
+      onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
+      onDragOver={(event) => handleFoldDragOver(parent, event)}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearFoldDropMarker(event.currentTarget); }}
+      onDrop={(event) => handleFoldDrop(parent, event)}
+    >{insertions.get(0)}{lines.map((line, index) => <Fragment key={`${parent}-edit-${index}`}><span className="section-copy-line">{line || "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>)}</div></>;
   };
   const commitEditable = (area: "source" | "modern", root: HTMLDivElement) => {
     const next = editableValue(root);
@@ -375,12 +425,13 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     const placeholder = area === "source" ? "작품 원문을 입력하거나 불러와 주세요." : "현대어 풀이를 입력해 주세요.";
     return <div
       ref={rootRef}
-      className={`poem editor-poem wysiwyg-poem-editor ${area}-wysiwyg-editor`}
+      className={`poem editor-poem wysiwyg-poem-editor wysiwyg-block-editor ${area}-wysiwyg-editor`}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       role="textbox"
       aria-multiline="true"
       aria-label={`${area === "source" ? "작품 원문" : "현대어 풀이"} 직접 편집`}
+      style={styleFor(area)}
       data-empty={text ? "false" : "true"}
       data-placeholder={placeholder}
       onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
@@ -435,20 +486,20 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
       <div className="literature-content">
         <section id="appreciation" className="literature-section"><div className="section-rule" /><article>
           <h3>작품 원문</h3>
-          {editor ? <><label className="source-label">출판 화면에서 작품 원문 직접 편집 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button></span></label>{editablePoem("source", form.sourceText)}{alignmentToolbar("source")}
-            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("source")}</> : <div className="poem">{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>}{foldEditors("source")}{addFold("source")}
-          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{editablePoem("modern", blocks.modernTranslation)}{alignmentToolbar("modern")}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("modern")}</> : <div className="poem">{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>}{foldEditors("modern")}{addFold("modern")}</>}
+          {editor ? <><label className="source-label">출판 화면에서 작품 원문 직접 편집 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button></span></label>{textStyleToolbar("source", "작품 원문")}{editablePoem("source", form.sourceText)}{alignmentToolbar("source")}
+            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("source")}</> : <div className="poem" style={styleFor("source")}>{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>}{addFold("source")}
+          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{textStyleToolbar("modern", "현대어 풀이")}{editablePoem("modern", blocks.modernTranslation)}{alignmentToolbar("modern")}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("modern")}</> : <div className="poem" style={styleFor("modern")}>{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>}{addFold("modern")}</>}
           {editor && blocks.modernTranslationHidden && <button type="button" className="add-inline" onClick={onRestoreModern}>+ 현대어 풀이 추가</button>}
           {extra("appreciation")}{add("appreciation")}
         </article></section>
         <section id="summary" className="literature-section"><div className="section-rule" /><article>
-          <h3>주제</h3>{editor ? <textarea className="section-editor" value={form.theme} onChange={(e) => update?.("theme", e.target.value)} placeholder="작품의 주제를 작성하세요." /> : copyWithFolds(form.theme, "theme")}{foldEditors("theme")}{addFold("theme")}
-          <h3>작가 소개</h3>{editableBlock("authorIntro", blocks.authorIntro, "작가 소개를 작성하세요.", "authorIntro")}{foldEditors("authorIntro")}{addFold("authorIntro")}
-          <h3>표현상의 특징</h3>{editor ? <textarea className="section-editor" value={form.expressionFeatures} onChange={(e) => update?.("expressionFeatures", e.target.value)} placeholder="표현상의 특징을 작성하세요." /> : copyWithFolds(form.expressionFeatures, "expressionFeatures")}{foldEditors("expressionFeatures")}{addFold("expressionFeatures")}
+          <h3>주제</h3>{editor ? editablePlainBlock(form.theme, "theme", "작품의 주제를 작성하세요.", "주제", (next) => update?.("theme", next)) : copyWithFolds(form.theme, "theme")}{addFold("theme")}
+          <h3>작가 소개</h3>{editableBlock("authorIntro", blocks.authorIntro, "작가 소개를 작성하세요.", "authorIntro")}{addFold("authorIntro")}
+          <h3>표현상의 특징</h3>{editor ? editablePlainBlock(form.expressionFeatures, "expressionFeatures", "표현상의 특징을 작성하세요.", "표현상의 특징", (next) => update?.("expressionFeatures", next)) : copyWithFolds(form.expressionFeatures, "expressionFeatures")}{addFold("expressionFeatures")}
           {extra("summary")}{add("summary")}
         </article></section>
         <section id="deep" className="literature-section"><div className="section-rule" /><article>
-          <h3>심화 탐구</h3>{editableBlock("deepInquiry", blocks.deepInquiry, "심화 탐구 내용을 작성하세요.", "deepInquiry")}{foldEditors("deepInquiry")}{addFold("deepInquiry")}
+          <h3>심화 탐구</h3>{editableBlock("deepInquiry", blocks.deepInquiry, "심화 탐구 내용을 작성하세요.", "deepInquiry")}{addFold("deepInquiry")}
           {extra("deep")}{add("deep")}
         </article></section>
         {discussion && <section id="check" className="literature-section qna-section"><div className="section-rule" /><article><h3>Q&amp;A</h3>{discussion}</article></section>}
@@ -460,7 +511,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
 export default function LiteratureApp({ initialWorkId }: { initialWorkId?: string }) {
   const [user, setUser] = useState<User | null>(); const [token, setToken] = useState("");
   const [screen, setScreen] = useState<"library" | "teacher" | "detail" | "profile" | "account">(initialWorkId ? "detail" : "library"); const [works, setWorks] = useState<Work[]>([]); const [selected, setSelected] = useState<Work>();
-  const [form, setForm] = useState(blankForm); const [blocks, setBlocks] = useState(emptyBlocks); const [lineAlignments, setLineAlignments] = useState<TextAlignments>(emptyAlignments); const [editingId, setEditingId] = useState(""); const [annotations, setAnnotations] = useState<Annotation[]>([]); const [extras, setExtras] = useState<ExtraSection[]>([]); const [foldSections, setFoldSections] = useState<FoldSection[]>([]);
+  const [form, setForm] = useState(blankForm); const [blocks, setBlocks] = useState(emptyBlocks); const [lineAlignments, setLineAlignments] = useState<TextAlignments>(emptyAlignments); const [textStyles, setTextStyles] = useState<TextStyles>({}); const [editingId, setEditingId] = useState(""); const [annotations, setAnnotations] = useState<Annotation[]>([]); const [extras, setExtras] = useState<ExtraSection[]>([]); const [foldSections, setFoldSections] = useState<FoldSection[]>([]);
   const [selectedPhrase, setSelectedPhrase] = useState(""); const [selection, setSelection] = useState<{ start: number; end: number }>(); const [selectedArea, setSelectedArea] = useState<"source" | "modern">("source"); const [note, setNote] = useState(""); const [tone, setTone] = useState(0); const [noteOpen, setNoteOpen] = useState(false);
   const [query, setQuery] = useState(""); const [category, setCategory] = useState(""); const [categories, setCategories] = useState<string[]>([]); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(false); const [activeMenu, setActiveMenu] = useState(""); const [authOpen, setAuthOpen] = useState(false); const [authMessage, setAuthMessage] = useState(""); const [authMode, setAuthMode] = useState<"login" | "signup" | "verify">("login"); const [signupRole, setSignupRole] = useState<"teacher" | "student">("student"); const [teacherInviteCode, setTeacherInviteCode] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [verificationCode, setVerificationCode] = useState(""); const [realName, setRealName] = useState(""); const [nickname, setNickname] = useState(""); const [newPassword, setNewPassword] = useState(""); const [confirmPassword, setConfirmPassword] = useState("");
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -475,6 +526,10 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
     const areaAlignments = { ...now[area] };
     for (let line = startLine; line <= endLine; line += 1) { if (alignment === "left") delete areaAlignments[line]; else areaAlignments[line] = alignment; }
     return { ...now, [area]: areaAlignments };
+  });
+  const updateTextStyle = (key: string, style: TextStyle) => setTextStyles((now) => {
+    const next = { ...now }; const clean = Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined && value !== "")) as TextStyle;
+    if (Object.keys(clean).length) next[key] = clean; else delete next[key]; return next;
   });
   useEffect(() => {
     let active = true;
@@ -549,8 +604,8 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setScreen("library"); setMessage("회원 탈퇴가 완료되었습니다.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "회원 탈퇴를 완료하지 못했습니다."); } finally { setLoading(false); }
   }
-  function newTeacher() { setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
-  function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
+  function newTeacher() { setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setTextStyles({}); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
+  function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setTextStyles(work.generated_result?.textStyles || {}); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
   function editSelected() { if (selected) beginEdit(selected); }
   async function editWork(work: Work) { const res = await fetch(`/api/works/${work.id}`); const data = await res.json(); if (!res.ok) return setMessage(data.error || "작품을 불러오지 못했습니다."); beginEdit(data); }
   function selectText(area: "source" | "modern", selected: EditorTextSelection) { if (selected.phrase.trim()) { setSelectedPhrase(selected.phrase); setSelection({ start: selected.start, end: selected.end }); setSelectedArea(area); } else { setSelectedPhrase(""); setSelection(undefined); } }
@@ -562,7 +617,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   function imageFile(file?: File) { if (!file) return; const reader = new FileReader(); reader.onload = () => update("authorImageUrl", String(reader.result || "")); reader.readAsDataURL(file); }
   function searchSources() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); const search = `${form.title} ${form.author} 원문`; window.open(`https://www.google.com/search?q=${encodeURIComponent(search)}`, "_blank", "noopener,noreferrer"); }
   async function loadSource() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); setMessage(""); setSourceLoading(true); try { const res = await fetch("/api/works/source", { method: "POST", headers: headers(), body: JSON.stringify({ title: form.title, author: form.author }) }); const raw = await res.text(); let data: { sourceText?: string; error?: string } = {}; try { data = raw ? JSON.parse(raw) : {}; } catch { throw new Error("서버가 읽을 수 없는 응답을 반환했습니다. NAS 배포 상태를 확인해 주세요."); } if (!res.ok) throw new Error(data.error || "AI 원문을 불러오지 못했습니다."); if (!data.sourceText) throw new Error("AI 응답에 원문이 없습니다."); update("sourceText", data.sourceText); setMessage("AI가 확인한 원문을 입력했습니다. 출판 전에 원문과 저작권 상태를 반드시 확인해 주세요."); } catch (error) { setMessage(error instanceof Error ? error.message : "AI 원문을 불러오지 못했습니다."); } finally { setSourceLoading(false); } }
-  async function publish(event: FormEvent) { event.preventDefault(); setMessage(""); if (!form.title.trim()) return setMessage("작품명을 입력해 주세요."); if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요."); setLoading(true); try { const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...form, title: form.title.trim(), annotations, extraSections: extras, generatedResult: { editorBlocks: blocks, lineAlignments, foldSections, sourceCitation: form.sourceCitation.trim() } }) }); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다."); setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks(""); } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); } }
+  async function publish(event: FormEvent) { event.preventDefault(); setMessage(""); if (!form.title.trim()) return setMessage("작품명을 입력해 주세요."); if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요."); setLoading(true); try { const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...form, title: form.title.trim(), annotations, extraSections: extras, generatedResult: { editorBlocks: blocks, lineAlignments, textStyles, foldSections, sourceCitation: form.sourceCitation.trim() } }) }); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다."); setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks(""); } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); } }
   async function deleteWork(value?: unknown) { const workId = typeof value === "string" ? value : editingId; if (!workId || !window.confirm("이 출판물을 삭제할까요? 관련 Q&A 댓글도 함께 삭제되며 되돌릴 수 없습니다.")) return; setLoading(true); try { const res = await fetch(`/api/works/${workId}`, { method: "DELETE", headers: headers() }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setMessage("출판물을 삭제했습니다."); setActiveMenu(""); setEditingId(""); setScreen("library"); searchWorks(""); } catch (error) { setMessage(error instanceof Error ? error.message : "출판물을 삭제하지 못했습니다."); } finally { setLoading(false); } }
   async function loadComments(workId: string) { const res = await fetch(`/api/works/${workId}/comments`, { cache: "no-store" }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "Q&A를 불러오지 못했습니다."); setComments(data); }
   async function loadWork(workId: string) { const res = await fetch(`/api/works/${workId}`); const data = await res.json(); if (!res.ok) { setMessage(data.error || "작품을 불러오지 못했습니다."); setScreen("library"); return; } setSelected(data); setComments([]); setCommentText(""); setScreen("detail"); try { await loadComments(workId); } catch (error) { setMessage(error instanceof Error ? error.message : "Q&A를 불러오지 못했습니다."); } }
@@ -575,9 +630,9 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   return <main><header><a className="brand" href={portalUrl}>{"수\uE8A1니기는 국어시간"}</a><nav><button onClick={openLibrary}>작품 찾기</button>{user?.role === "teacher" && <button onClick={newTeacher}>교사 작업실</button>}<a className="portal-link" href={portalUrl}>국어시간 홈</a></nav><div className="identity">{user ? <><button className="account-link" onClick={openAccount}>{user.role === "teacher" ? "교사" : "학생"} · {user.email}</button><button onClick={() => { sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setMessage(""); setScreen("library"); }}>로그아웃</button></> : <button onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>로그인</button>}</div></header>
     {screen !== "library" && <section className="top"><p>LITERATURE LEARNING PLATFORM</p><h1 className="old-korean-title">{"수\uE8A1니기는 문학시간"}</h1><span>문학 작품의 해설과 Q&amp;A를 한곳에서</span></section>}{message && <div className="notice">{message}</div>}
     {screen === "library" && <><LegacyLiteratureMenu legacyBase={portalUrl} /><GenreMenu selected={category} onSelect={chooseGenre} legacyBase={portalUrl} /><section className="library" id="published-works"><div className="library-head"><div><p>STUDENT LIBRARY</p><h2>{category ? `${category} 작품` : "출판된 작품 자료"}</h2></div>{user?.role === "teacher" && <button className="primary" onClick={newTeacher}>새 해설 작성</button>}</div><div className="search"><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchWorks()} placeholder="작품명 또는 작가 검색" /><select value={category} aria-label="갈래별 작품 보기" onChange={(e) => { const next = e.target.value; setCategory(next); searchWorks(query, next); }}><option value="">모든 갈래</option>{genreOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select><button onClick={() => searchWorks()}>검색</button></div><div className="cards">{works.map((work) => <article key={work.id} onClick={() => openWork(work)}>{user?.role === "teacher" && <div className="card-menu"><button type="button" className="card-menu-trigger" aria-label={`${work.title} 관리 메뉴`} onClick={(event) => { event.stopPropagation(); setActiveMenu((now) => now === work.id ? "" : work.id); }}>⋯</button>{activeMenu === work.id && <div className="card-menu-popover"><button type="button" onClick={(event) => { event.stopPropagation(); editWork(work); }}>수정하기</button><button type="button" className="danger" onClick={(event) => { event.stopPropagation(); deleteWork(work.id); }}>삭제하기</button></div>}</div>}<p>{work.genre || "문학"}</p><h3>{work.title}</h3><span>{work.author || "작가 미입력"}</span><hr /><small className="work-opening">{work.source_text?.split(/\r?\n/).find((line) => line.trim()) || "작품 원문이 등록되지 않았습니다."}</small></article>)}{!works.length && <p className="empty">{category ? `${category}로 출판된 작품이 아직 없습니다.` : "아직 출판된 작품이 없습니다."}</p>}</div></section></>}
-    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} addExtra={addExtra} removeExtra={(id) => { setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); }} updateExtra={(id, key, value) => setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item))} addFoldSection={addFoldSection} removeFoldSection={(id) => setFoldSections((now) => now.filter((item) => item.id !== id))} updateFoldSection={updateFoldSection} removeAnnotation={(id) => setAnnotations((now) => now.filter((item) => item.id !== id))} onChooseImage={imageFile} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><button type="button" onClick={() => setAnnotations((now) => now.filter((value) => value.id !== item.id))}>이 각주 삭제</button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
+    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} textStyles={textStyles} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} updateTextStyle={updateTextStyle} addExtra={addExtra} removeExtra={(id) => { setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); }} updateExtra={(id, key, value) => setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item))} addFoldSection={addFoldSection} removeFoldSection={(id) => setFoldSections((now) => now.filter((item) => item.id !== id))} updateFoldSection={updateFoldSection} removeAnnotation={(id) => setAnnotations((now) => now.filter((item) => item.id !== id))} onChooseImage={imageFile} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><button type="button" onClick={() => setAnnotations((now) => now.filter((value) => value.id !== item.id))}>이 각주 삭제</button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
     {screen === "detail" && !selected && <section className="work-loading">작품을 불러오는 중입니다.</section>}
-    {screen === "detail" && selected && <><section className="detail-actions"><button className="back" onClick={openLibrary}>← 자료실로</button>{user?.role === "teacher" && <><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></>}</section><Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /></>}
+    {screen === "detail" && selected && <><section className="detail-actions"><button className="back" onClick={openLibrary}>← 자료실로</button>{user?.role === "teacher" && <><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></>}</section><Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} textStyles={selected.generated_result?.textStyles || {}} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /></>}
     {screen === "profile" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>MY PROFILE</p><h2>내 정보 관리</h2><span>이름과 닉네임은 작품별 Q&amp;A에 표시됩니다.</span><label>이름<input value={realName} onChange={(event) => setRealName(event.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input value={nickname} maxLength={7} onChange={(event) => setNickname(event.target.value)} placeholder="예: 문학소년" /></label><button className="primary" disabled={loading} onClick={saveProfile}>{loading ? "저장 중…" : "내 정보 저장"}</button><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>계정과 회원 정보는 삭제되지만 작성한 Q&amp;A는 대화 기록을 위해 작성 당시 이름으로 보존됩니다. 탈퇴 전에는 본인이, 이후에는 교사 관리자만 삭제할 수 있습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
     {screen === "account" && user?.role === "teacher" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>TEACHER ACCOUNT</p><h2>교사 정보 관리</h2><span>로그인 계정을 확인하고 새 비밀번호로 변경할 수 있습니다.</span><label>이메일<input type="email" value={user.email || ""} readOnly /></label><form onSubmit={changePassword}><label>새 비밀번호 <small>6자 이상</small><input required minLength={6} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label>새 비밀번호 확인<input required minLength={6} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "변경 중…" : "비밀번호 변경"}</button></form><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>교사 계정은 출판물을 모두 삭제한 뒤 탈퇴할 수 있습니다. 탈퇴한 계정은 복구할 수 없습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
     {authOpen && <div className="modal"><form onSubmit={authenticate}><button type="button" className="x" onClick={() => { setAuthMessage(""); setAuthOpen(false); }}>×</button><p>{authMode === "signup" ? "ACCOUNT SIGN UP" : authMode === "verify" ? "VERIFY EMAIL" : "SIGN IN"}</p><h2>{authMode === "signup" ? "계정 만들기" : authMode === "verify" ? "이메일 확인" : "로그인"}</h2>{authMessage && <div className="auth-message" role="alert">{authMessage}</div>}{authMode === "signup" && <><label>가입 유형<select value={signupRole} onChange={(e) => setSignupRole(e.target.value as "teacher" | "student")}><option value="student">학생</option><option value="teacher">교사</option></select></label>{signupRole === "teacher" && <label>교사 초대 코드<input required type="password" value={teacherInviteCode} onChange={(e) => setTeacherInviteCode(e.target.value)} placeholder="관리자에게 받은 초대 코드" /></label>}<label>이름<input required value={realName} onChange={(e) => setRealName(e.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input required maxLength={7} value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="예: 문학소년" /></label></>}{authMode === "verify" ? <><label>가입 이메일<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label>6자리 확인 코드<input className="verification-code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label><button className="primary" disabled={loading}>{loading ? "확인 중…" : "코드 확인하고 로그인"}</button><button type="button" className="link" disabled={loading} onClick={() => void resendVerification()}>확인 코드 다시 받기</button><button type="button" className="link" onClick={() => { setAuthMessage(""); setAuthMode("login"); }}>로그인으로 돌아가기</button></> : <><label>이메일<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label>비밀번호<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label><button className="primary" disabled={loading}>{authMode === "signup" ? `${signupRole === "teacher" ? "교사" : "학생"} 회원가입` : "로그인"}</button><button type="button" className="link" onClick={() => { setAuthMessage(""); setAuthMode(authMode === "login" ? "signup" : "login"); }}>{authMode === "login" ? "회원가입으로 이동" : "로그인으로 돌아가기"}</button>{authMode === "signup" && <small>교사 가입은 관리자에게 받은 초대 코드가 있어야 완료됩니다.</small>}</>}</form></div>}
