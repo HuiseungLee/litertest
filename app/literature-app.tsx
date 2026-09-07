@@ -329,9 +329,10 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
         >{content}</AnnotationMark>;
       }
       const background = active.map((item) => annotationGradient(item.annotation.tone, item.layer, .27)).join(",");
+      const highlightSize = active.some((item) => item.layer === "outer") ? "large" : active.some((item) => item.layer === "inner") ? "medium" : "small";
       const roundedStart = active.length > 0 && active.every((item) => item.annotation.start === globalStart);
       const roundedEnd = active.length > 0 && active.every((item) => item.annotation.end === globalEnd);
-      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} data-rounded-start={roundedStart || undefined} data-rounded-end={roundedEnd || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
+      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} data-highlight-size={active.length ? highlightSize : undefined} data-rounded-start={roundedStart || undefined} data-rounded-end={roundedEnd || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
     });
     return <Fragment key={`line-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`} data-line-index={lineIndex} data-line-start={lineStart}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
   });
