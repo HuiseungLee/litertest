@@ -12,6 +12,7 @@ type EditorBlocks = { modernTranslation: string; modernTranslationHidden?: boole
 type TextAlignment = "left" | "center" | "right";
 type LineAlignmentMap = Record<string, TextAlignment>;
 type TextAlignments = { source: LineAlignmentMap; modern: LineAlignmentMap };
+type EditorTextSelection = { start: number; end: number; phrase: string };
 type Work = {
   id: string; title: string; author?: string; genre?: string; theme?: string; summary?: string;
   source_text?: string; expression_features?: string; commentary: string; published_at?: string;
@@ -103,7 +104,7 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children }: {
     onPointerLeave={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
     onFocus={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
     onBlur={(event) => { event.stopPropagation(); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
-  >{children}<span className="term-tooltip">{annotation.note}</span></mark>;
+  >{children}<span className="term-tooltip" contentEditable={false}>{annotation.note}</span></mark>;
 }
 
 function normalizeAlignments(value?: Partial<TextAlignments>): TextAlignments {
@@ -137,8 +138,10 @@ function savedFoldSections(work: Work) {
   return [...saved, ...migrated.filter((item) => !ids.has(item.id))];
 }
 
-function poem(text: string | undefined, annotations: Annotation[], area: "source" | "modern" = "source", alignments: LineAlignmentMap = {}, insertions = new Map<number, ReactNode[]>()) {
-  if (!text) return <><p className="empty-copy">작품 원문을 입력하거나 불러와 주세요.</p>{insertions.get(0)}</>;
+function poem(text: string | undefined, annotations: Annotation[], area: "source" | "modern" = "source", alignments: LineAlignmentMap = {}, insertions = new Map<number, ReactNode[]>(), editable = false) {
+  if (!text) return editable
+    ? <>{insertions.get(0)}<p className="poem-line align-left" data-line-index="0" data-line-start="0"><br /></p></>
+    : <><p className="empty-copy">작품 원문을 입력하거나 불러와 주세요.</p>{insertions.get(0)}</>;
   const phraseOffsets = new Map<string, number>();
   const exact: PositionedAnnotation[] = annotations.filter((item) => (item.area || "source") === area).flatMap((item) => {
     if (Number.isInteger(item.start) && Number.isInteger(item.end) && (item.end || 0) > (item.start || 0)) {
@@ -189,9 +192,9 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
           rangeEnd={lineStart + segmentEnd === item.annotation.end}
         >{content}</AnnotationMark>;
       }
-      pieces.push(<Fragment key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</Fragment>);
+      pieces.push(<span className="poem-segment" data-text-start={lineStart + segmentStart} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
     });
-    return <Fragment key={`${line}-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
+    return <Fragment key={`line-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`} data-line-index={lineIndex} data-line-start={lineStart}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
   });
 }
 
@@ -222,12 +225,12 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
   updateAlignment?: (area: "source" | "modern", startLine: number, endLine: number, alignment: TextAlignment) => void;
   addExtra?: (group: Group) => void; removeExtra?: (id: string) => void; updateExtra?: (id: string, key: "title" | "content", value: string) => void;
   addFoldSection?: (parent: string) => void; removeFoldSection?: (id: string) => void; updateFoldSection?: (id: string, key: "title" | "content" | "position", value: string | number) => void; removeAnnotation?: (id: string) => void;
-  onChooseImage?: (file?: File) => void; onSelectSource?: () => void; onSelectModern?: () => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
+  onChooseImage?: (file?: File) => void; onSelectSource?: (selection: EditorTextSelection) => void; onSelectModern?: (selection: EditorTextSelection) => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
   const imageViewerTrigger = useRef<HTMLButtonElement>(null);
-  const sourceEditor = useRef<HTMLTextAreaElement>(null);
-  const modernEditor = useRef<HTMLTextAreaElement>(null);
+  const sourceEditor = useRef<HTMLDivElement>(null);
+  const modernEditor = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLElement>(null);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [lineSelection, setLineSelection] = useState({ source: { start: 0, end: 0 }, modern: { start: 0, end: 0 } });
@@ -262,7 +265,7 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
     : copyWithFolds(value, parent);
   const contentForParent = (parent: string) => parent === "source" ? form.sourceText : parent === "modern" ? blocks.modernTranslation : parent === "theme" ? form.theme : parent === "authorIntro" ? blocks.authorIntro : parent === "expressionFeatures" ? form.expressionFeatures : parent === "deepInquiry" ? blocks.deepInquiry : extras.find((item) => item.id === parent)?.content || "";
   const labelForParent = (parent: string) => parent === "source" ? "작품 원문" : parent === "modern" ? "현대어 풀이" : parent === "theme" ? "주제" : parent === "authorIntro" ? "작가 소개" : parent === "expressionFeatures" ? "표현상의 특징" : parent === "deepInquiry" ? "심화 탐구" : extras.find((item) => item.id === parent)?.title || "하위 목록";
-  const foldDisclosure = (item: FoldSection) => <details className="collapsible-extra" key={item.id}><summary>{item.title || "소제목"}</summary><div className="collapsible-extra-content"><p className="section-copy">{item.content}</p></div></details>;
+  const foldDisclosure = (item: FoldSection) => <details className="collapsible-extra" contentEditable={editor ? false : undefined} key={item.id}><summary>{item.title || "소제목"}</summary><div className="collapsible-extra-content"><p className="section-copy">{item.content}</p></div></details>;
   const foldInsertions = (parent: string) => {
     const text = contentForParent(parent); const lineCount = text ? text.split(/\r?\n/).length : 0; const insertions = new Map<number, ReactNode[]>();
     foldSections.filter((item) => item.parent === parent).forEach((item) => { const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount); insertions.set(position, [...(insertions.get(position) || []), foldDisclosure(item)]); });
@@ -285,18 +288,73 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
   </div>);
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
   const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
-  const findSelectedLines = (node: HTMLTextAreaElement) => {
-    const start = node.selectionStart; let end = node.selectionEnd;
-    if (end > start && node.value[end - 1] === "\n") end -= 1;
-    return { start: (node.value.slice(0, start).match(/\n/g) || []).length, end: (node.value.slice(0, end).match(/\n/g) || []).length };
+  const editableNodeText = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
+    if (!(node instanceof HTMLElement)) return Array.from(node.childNodes).map(editableNodeText).join("");
+    if (node.matches(".term-tooltip,.collapsible-extra")) return "";
+    if (node.tagName === "BR") return "\n";
+    return Array.from(node.childNodes).map(editableNodeText).join("");
   };
-  const rememberLineSelection = (area: "source" | "modern", node: HTMLTextAreaElement) => setLineSelection((now) => ({ ...now, [area]: findSelectedLines(node) }));
+  const editableValue = (root: HTMLElement) => {
+    const lines = Array.from(root.childNodes).flatMap((node) => {
+      if (node instanceof HTMLElement && node.matches(".collapsible-extra")) return [];
+      const raw = editableNodeText(node).replace(/\u200b/g, "").replace(/\u00a0/g, " ");
+      return [raw === " " ? "" : raw.replace(/\n$/, "")];
+    });
+    return lines.join("\n");
+  };
+  const commitEditable = (area: "source" | "modern", root: HTMLDivElement) => {
+    const next = editableValue(root);
+    if (area === "source" && next !== form.sourceText) update?.("sourceText", next);
+    if (area === "modern" && next !== blocks.modernTranslation) updateBlock?.("modernTranslation", next);
+    root.dataset.empty = next ? "false" : "true";
+    return next;
+  };
+  const offsetAtBoundary = (root: HTMLDivElement, container: Node, offset: number) => {
+    const range = document.createRange(); range.selectNodeContents(root);
+    try { range.setEnd(container, offset); } catch { return 0; }
+    const holder = document.createElement("div"); holder.appendChild(range.cloneContents());
+    return editableValue(holder).length;
+  };
+  const captureEditableSelection = (area: "source" | "modern", root: HTMLDivElement) => {
+    const text = commitEditable(area, root); const selected = window.getSelection();
+    if (!selected?.rangeCount) return;
+    const range = selected.getRangeAt(0);
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
+    const start = Math.min(offsetAtBoundary(root, range.startContainer, range.startOffset), text.length);
+    const end = Math.min(offsetAtBoundary(root, range.endContainer, range.endOffset), text.length);
+    let lineEnd = end; if (lineEnd > start && text[lineEnd - 1] === "\n") lineEnd -= 1;
+    setLineSelection((now) => ({ ...now, [area]: {
+      start: (text.slice(0, start).match(/\n/g) || []).length,
+      end: (text.slice(0, lineEnd).match(/\n/g) || []).length,
+    } }));
+    const selection = { start, end, phrase: text.slice(start, end) };
+    if (area === "source") onSelectSource?.(selection); else onSelectModern?.(selection);
+  };
+  const editablePoem = (area: "source" | "modern", text: string) => {
+    const rootRef = area === "source" ? sourceEditor : modernEditor;
+    const placeholder = area === "source" ? "작품 원문을 입력하거나 불러와 주세요." : "현대어 풀이를 입력해 주세요.";
+    return <div
+      ref={rootRef}
+      className="poem editor-poem wysiwyg-poem-editor"
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      aria-label={`${area === "source" ? "작품 원문" : "현대어 풀이"} 직접 편집`}
+      data-empty={text ? "false" : "true"}
+      data-placeholder={placeholder}
+      onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
+      onBlur={(event) => { commitEditable(area, event.currentTarget); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+      onMouseUp={(event) => captureEditableSelection(area, event.currentTarget)}
+      onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureEditableSelection(area, event.currentTarget); }}
+      onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
+    >{poem(text, annotations, area, alignments[area], foldInsertions(area), true)}</div>;
+  };
   const applyAlignment = (area: "source" | "modern", alignment: TextAlignment) => {
     const node = area === "source" ? sourceEditor.current : modernEditor.current;
     if (!node) return;
-    const selected = findSelectedLines(node); const selectionStart = node.selectionStart; const selectionEnd = node.selectionEnd;
-    setLineSelection((now) => ({ ...now, [area]: selected })); updateAlignment?.(area, selected.start, selected.end, alignment);
-    requestAnimationFrame(() => { node.focus(); node.setSelectionRange(selectionStart, selectionEnd); });
+    commitEditable(area, node); const selected = lineSelection[area]; updateAlignment?.(area, selected.start, selected.end, alignment);
   };
   const alignmentToolbar = (area: "source" | "modern") => {
     const selected = lineSelection[area]; const labels: Array<{ value: TextAlignment; label: string; symbol: string }> = [
@@ -335,9 +393,9 @@ function Publication({ form, annotations, blocks, alignments, extras, foldSectio
       <div className="literature-content">
         <section id="appreciation" className="literature-section"><div className="section-rule" /><article>
           <h3>작품 원문</h3>
-          {editor ? <><label className="source-label">작품 원문 또는 발췌 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button></span></label><textarea ref={sourceEditor} className="source-editor" value={form.sourceText} onChange={(e) => update?.("sourceText", e.target.value)} onSelect={(event) => { rememberLineSelection("source", event.currentTarget); onSelectSource?.(); }} placeholder="원문을 입력하고, 해설할 구절을 드래그해 선택하세요." />{alignmentToolbar("source")}
-            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주와 정렬이 적용된 모습</span></div><div className="poem editor-poem">{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>{annotationManager("source")}</> : <div className="poem">{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>}{foldEditors("source")}{addFold("source")}
-          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <><textarea ref={modernEditor} className="section-editor modern-editor" value={blocks.modernTranslation} onChange={(e) => updateBlock?.("modernTranslation", e.target.value)} onSelect={(event) => { rememberLineSelection("modern", event.currentTarget); onSelectModern?.(); }} placeholder="현대어 풀이를 작성하고 해설할 구절을 드래그해 선택하세요." />{alignmentToolbar("modern")}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>각주와 정렬이 적용된 모습</span></div><div className="poem editor-poem">{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>{annotationManager("modern")}</> : <div className="poem">{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>}{foldEditors("modern")}{addFold("modern")}</>}
+          {editor ? <><label className="source-label">출판 화면에서 작품 원문 직접 편집 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button></span></label>{editablePoem("source", form.sourceText)}{alignmentToolbar("source")}
+            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("source")}</> : <div className="poem">{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>}{foldEditors("source")}{addFold("source")}
+          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{editablePoem("modern", blocks.modernTranslation)}{alignmentToolbar("modern")}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("modern")}</> : <div className="poem">{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>}{foldEditors("modern")}{addFold("modern")}</>}
           {editor && blocks.modernTranslationHidden && <button type="button" className="add-inline" onClick={onRestoreModern}>+ 현대어 풀이 추가</button>}
           {extra("appreciation")}{add("appreciation")}
         </article></section>
@@ -453,7 +511,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
   function editSelected() { if (selected) beginEdit(selected); }
   async function editWork(work: Work) { const res = await fetch(`/api/works/${work.id}`); const data = await res.json(); if (!res.ok) return setMessage(data.error || "작품을 불러오지 못했습니다."); beginEdit(data); }
-  function selectText(area: "source" | "modern") { const node = document.querySelector<HTMLTextAreaElement>(area === "source" ? ".source-editor" : ".modern-editor"); if (!node) return; const start = node.selectionStart; const end = node.selectionEnd; const phrase = node.value.slice(start, end); if (phrase.trim()) { setSelectedPhrase(phrase); setSelection({ start, end }); setSelectedArea(area); } }
+  function selectText(area: "source" | "modern", selected: EditorTextSelection) { if (selected.phrase.trim()) { setSelectedPhrase(selected.phrase); setSelection({ start: selected.start, end: selected.end }); setSelectedArea(area); } else { setSelectedPhrase(""); setSelection(undefined); } }
   function addNote(area: "source" | "modern") { if (!selectedPhrase || selectedArea !== area) return setMessage(`${area === "source" ? "작품 원문" : "현대어 풀이"}에서 해설할 구절을 드래그해 선택해 주세요.`); setNote(""); setNoteOpen(true); }
   function saveNote() { if (!note.trim()) return setMessage("학생에게 보일 각주 설명을 입력해 주세요."); if (!selection) return setMessage("원문에서 다시 구절을 선택해 주세요."); setAnnotations((now) => [...now, { id: crypto.randomUUID(), phrase: selectedPhrase, note: note.trim(), tone, start: selection.start, end: selection.end, area: selectedArea }]); setSelectedPhrase(""); setSelection(undefined); setNoteOpen(false); }
   function addExtra(group: Group) { const title = window.prompt("새 하위 목록의 제목을 입력하세요."); if (!title?.trim()) return; setExtras((now) => [...now, { id: crypto.randomUUID(), group, title: title.trim(), content: "내용을 작성하세요." }]); }
@@ -475,7 +533,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   return <main><header><a className="brand" href={portalUrl}>{"수\uE8A1니기는 국어시간"}</a><nav><button onClick={openLibrary}>작품 찾기</button>{user?.role === "teacher" && <button onClick={newTeacher}>교사 작업실</button>}<a className="portal-link" href={portalUrl}>국어시간 홈</a></nav><div className="identity">{user ? <><button className="account-link" onClick={openAccount}>{user.role === "teacher" ? "교사" : "학생"} · {user.email}</button><button onClick={() => { sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setMessage(""); setScreen("library"); }}>로그아웃</button></> : <button onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>로그인</button>}</div></header>
     {screen !== "library" && <section className="top"><p>LITERATURE LEARNING PLATFORM</p><h1 className="old-korean-title">{"수\uE8A1니기는 문학시간"}</h1><span>문학 작품의 해설과 Q&amp;A를 한곳에서</span></section>}{message && <div className="notice">{message}</div>}
     {screen === "library" && <><LegacyLiteratureMenu legacyBase={portalUrl} /><GenreMenu selected={category} onSelect={chooseGenre} legacyBase={portalUrl} /><section className="library" id="published-works"><div className="library-head"><div><p>STUDENT LIBRARY</p><h2>{category ? `${category} 작품` : "출판된 작품 자료"}</h2></div>{user?.role === "teacher" && <button className="primary" onClick={newTeacher}>새 해설 작성</button>}</div><div className="search"><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchWorks()} placeholder="작품명 또는 작가 검색" /><select value={category} aria-label="갈래별 작품 보기" onChange={(e) => { const next = e.target.value; setCategory(next); searchWorks(query, next); }}><option value="">모든 갈래</option>{genreOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select><button onClick={() => searchWorks()}>검색</button></div><div className="cards">{works.map((work) => <article key={work.id} onClick={() => openWork(work)}>{user?.role === "teacher" && <div className="card-menu"><button type="button" className="card-menu-trigger" aria-label={`${work.title} 관리 메뉴`} onClick={(event) => { event.stopPropagation(); setActiveMenu((now) => now === work.id ? "" : work.id); }}>⋯</button>{activeMenu === work.id && <div className="card-menu-popover"><button type="button" onClick={(event) => { event.stopPropagation(); editWork(work); }}>수정하기</button><button type="button" className="danger" onClick={(event) => { event.stopPropagation(); deleteWork(work.id); }}>삭제하기</button></div>}</div>}<p>{work.genre || "문학"}</p><h3>{work.title}</h3><span>{work.author || "작가 미입력"}</span><hr /><small className="work-opening">{work.source_text?.split(/\r?\n/).find((line) => line.trim()) || "작품 원문이 등록되지 않았습니다."}</small></article>)}{!works.length && <p className="empty">{category ? `${category}로 출판된 작품이 아직 없습니다.` : "아직 출판된 작품이 없습니다."}</p>}</div></section></>}
-    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} addExtra={addExtra} removeExtra={(id) => { setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); }} updateExtra={(id, key, value) => setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item))} addFoldSection={addFoldSection} removeFoldSection={(id) => setFoldSections((now) => now.filter((item) => item.id !== id))} updateFoldSection={updateFoldSection} removeAnnotation={(id) => setAnnotations((now) => now.filter((item) => item.id !== id))} onChooseImage={imageFile} onSelectSource={() => selectText("source")} onSelectModern={() => selectText("modern")} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><button type="button" onClick={() => setAnnotations((now) => now.filter((value) => value.id !== item.id))}>이 각주 삭제</button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
+    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} addExtra={addExtra} removeExtra={(id) => { setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); }} updateExtra={(id, key, value) => setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item))} addFoldSection={addFoldSection} removeFoldSection={(id) => setFoldSections((now) => now.filter((item) => item.id !== id))} updateFoldSection={updateFoldSection} removeAnnotation={(id) => setAnnotations((now) => now.filter((item) => item.id !== id))} onChooseImage={imageFile} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><button type="button" onClick={() => setAnnotations((now) => now.filter((value) => value.id !== item.id))}>이 각주 삭제</button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
     {screen === "detail" && !selected && <section className="work-loading">작품을 불러오는 중입니다.</section>}
     {screen === "detail" && selected && <><section className="detail-actions"><button className="back" onClick={openLibrary}>← 자료실로</button>{user?.role === "teacher" && <><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></>}</section><Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /></>}
     {screen === "profile" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>MY PROFILE</p><h2>내 정보 관리</h2><span>이름과 닉네임은 작품별 Q&amp;A에 표시됩니다.</span><label>이름<input value={realName} onChange={(event) => setRealName(event.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input value={nickname} maxLength={7} onChange={(event) => setNickname(event.target.value)} placeholder="예: 문학소년" /></label><button className="primary" disabled={loading} onClick={saveProfile}>{loading ? "저장 중…" : "내 정보 저장"}</button><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>계정과 회원 정보는 삭제되지만 작성한 Q&amp;A는 대화 기록을 위해 작성 당시 이름으로 보존됩니다. 탈퇴 전에는 본인이, 이후에는 교사 관리자만 삭제할 수 있습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
