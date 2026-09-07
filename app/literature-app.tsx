@@ -39,7 +39,6 @@ const textFontOptions: Array<{ value: TextFont; label: string; family: string }>
   { value: "notoSans", label: "본고딕", family: "'Noto Sans KR',sans-serif" },
   { value: "pretendard", label: "프리텐다드", family: "Pretendard,system-ui,sans-serif" },
 ];
-const annotationToneRgb = ["77,176,255", "112,173,71", "237,125,49", "174,89,233", "255,68,169", "120,120,120", "145,142,255", "238,68,68", "255,196,0", "60,200,181"];
 const emptyBlocks: EditorBlocks = { modernTranslation: "", modernTranslationHidden: false, authorIntro: "", deepInquiry: "" };
 const emptyAlignments = (): TextAlignments => ({ source: {}, modern: {} });
 const blankForm = { title: "", author: "", sourceCitation: "", genre: "현대시", sourceText: "", theme: "", expressionFeatures: "", summary: "", commentary: "", authorImageUrl: "" };
@@ -106,11 +105,6 @@ type PositionedAnnotation = Annotation & { start: number; end: number };
 type AnnotationLayer = "single" | "outer" | "inner" | "deep";
 type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number; layer: AnnotationLayer };
 
-function annotationGradient(tone: number, layer: AnnotationLayer, alpha = .27) {
-  const inset = layer === "deep" ? 4 : layer === "inner" ? 2 : 0; const color = annotationToneRgb[tone % annotationToneRgb.length];
-  return `linear-gradient(to bottom,transparent 0 ${inset}%,rgba(${color},${alpha}) ${inset}% ${100 - inset}%,transparent ${100 - inset}% 100%)`;
-}
-
 function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children, onEdit }: {
   annotation: PositionedAnnotation; layer: AnnotationLayer; rangeStart: boolean; rangeEnd: boolean; children: ReactNode; onEdit?: (annotation: Annotation, root?: HTMLDivElement) => void;
 }) {
@@ -118,15 +112,8 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children, onE
   const activate = (active: boolean) => {
     if (active && document.querySelector<HTMLElement>(".poetic-term.annotation-active")?.dataset.annotationId === annotation.id) return;
     document.querySelectorAll<HTMLElement>(".poetic-term.annotation-active").forEach((item) => item.classList.remove("annotation-active"));
-    document.querySelectorAll<HTMLElement>(".poem-segment[data-annotation-background]").forEach((segment) => {
-      segment.classList.remove("annotation-segment-active"); segment.style.backgroundImage = segment.dataset.annotationBackground || "";
-    });
     if (active) {
       document.querySelectorAll<HTMLElement>(".poetic-term").forEach((item) => { if (item.dataset.annotationId === annotation.id) item.classList.add("annotation-active"); });
-      document.querySelectorAll<HTMLElement>(".poem-segment[data-annotation-ids]").forEach((segment) => {
-        if (!(segment.dataset.annotationIds || "").split(" ").includes(annotation.id)) return;
-        segment.classList.add("annotation-segment-active"); segment.style.backgroundImage = `${annotationGradient(annotationTone, layer, .7)},${segment.dataset.annotationBackground || ""}`;
-      });
     }
   };
   const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
@@ -328,11 +315,7 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
           onEdit={editable ? onEditAnnotation : undefined}
         >{content}</AnnotationMark>;
       }
-      const background = active.map((item) => annotationGradient(item.annotation.tone, item.layer, .27)).join(",");
-      const highlightSize = active.some((item) => item.layer === "outer") ? "large" : active.some((item) => item.layer === "inner") ? "medium" : "small";
-      const roundedStart = active.some((item) => item.annotation.start === globalStart);
-      const roundedEnd = active.some((item) => item.annotation.end === globalEnd);
-      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} data-highlight-size={active.length ? highlightSize : undefined} data-annotation-overlap={active.length > 1 || undefined} data-rounded-start={roundedStart || undefined} data-rounded-end={roundedEnd || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
+      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
     });
     return <Fragment key={`line-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`} data-line-index={lineIndex} data-line-start={lineStart}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
   });
