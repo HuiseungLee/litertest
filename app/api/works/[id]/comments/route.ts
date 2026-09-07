@@ -20,6 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const user = await currentUser(request);
     if (!user || !user.role) throw new Error("로그인이 필요합니다.");
+    if (user.role === "student" && user.activityRestricted) throw new Error("교사에 의해 활동이 제한되어 질문을 등록할 수 없습니다.");
     const { id } = await context.params;
     const input = await request.json() as { body?: string; parentId?: string | null };
     const body = input.body?.trim() || "";

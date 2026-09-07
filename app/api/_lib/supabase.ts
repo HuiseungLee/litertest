@@ -82,7 +82,7 @@ export async function currentUser(request: Request) {
   if (!token || !url || !publishableKey) return null;
   const auth = await fetch(`${url}/auth/v1/user`, { headers: { apikey: publishableKey, Authorization: `Bearer ${token}` } });
   if (!auth.ok) return null;
-  const user = await auth.json() as { id: string; email?: string; user_metadata?: { role?: "teacher" | "student"; real_name?: string; nickname?: string } };
+  const user = await auth.json() as { id: string; email?: string; user_metadata?: { role?: "teacher" | "student"; real_name?: string; nickname?: string }; app_metadata?: { activity_restricted?: boolean; student_grade?: number } };
   let profileResponse = await userRest(`profiles?id=eq.${user.id}&select=role,display_name,real_name,nickname`, token);
   let profileData = await profileResponse.json();
   if (!profileResponse.ok && JSON.stringify(profileData).includes("nickname")) {
@@ -91,7 +91,7 @@ export async function currentUser(request: Request) {
   }
   const profile = Array.isArray(profileData) ? profileData[0] as { role?: string; display_name?: string; real_name?: string; nickname?: string } | undefined : undefined;
   const assignedRole = fixedRole(user.email);
-  return { ...user, role: assignedRole ?? profile?.role ?? (user.user_metadata?.role === "student" ? "student" : null), fixedRole: assignedRole, profileRole: profile?.role, displayName: profile?.display_name ?? null, realName: profile?.real_name ?? user.user_metadata?.real_name ?? null, nickname: profile?.nickname ?? user.user_metadata?.nickname ?? profile?.display_name ?? null, token };
+  return { ...user, role: assignedRole ?? profile?.role ?? (user.user_metadata?.role === "student" ? "student" : null), fixedRole: assignedRole, profileRole: profile?.role, displayName: profile?.display_name ?? null, realName: profile?.real_name ?? user.user_metadata?.real_name ?? null, nickname: profile?.nickname ?? user.user_metadata?.nickname ?? profile?.display_name ?? null, activityRestricted: Boolean(user.app_metadata?.activity_restricted), studentGrade: Math.max(1, Math.min(3, Number(user.app_metadata?.student_grade) || 1)), token };
 }
 export async function requireRole(request: Request, role: "teacher" | "student") {
   const user = await currentUser(request);
