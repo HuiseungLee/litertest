@@ -120,6 +120,7 @@
 
 .poem .poem-segment[data-rounded-start="true"]{border-radius:5px 0 0 5px}.poem .poem-segment[data-rounded-end="true"]{border-radius:0 5px 5px 0}.poem .poem-segment[data-rounded-start="true"][data-rounded-end="true"]{border-radius:5px}
 .poem .poem-segment[data-highlight-size="small"]{padding-block:2px}.poem .poem-segment[data-highlight-size="medium"]{padding-block:4px}.poem .poem-segment[data-highlight-size="large"]{padding-block:6px}
+.poem .poem-segment[data-annotation-overlap="true"]{padding-block:6px}.poem .poem-segment[data-annotation-overlap="true"][data-rounded-start="true"]{border-radius:6px 0 0 6px}.poem .poem-segment[data-annotation-overlap="true"][data-rounded-end="true"]{border-radius:0 6px 6px 0}.poem .poem-segment[data-annotation-overlap="true"][data-rounded-start="true"][data-rounded-end="true"]{border-radius:6px}
 
 /* 각주 창을 옮긴 상태에서도 아래 편집기의 원문을 직접 선택할 수 있다. */
 .note-dialog-backdrop{display:block;background:#17212a1f;pointer-events:none}.note-dialog{position:fixed;z-index:101;max-height:calc(100vh - 16px);overflow:auto;pointer-events:auto}.note-dialog-titlebar{display:flex;align-items:center;gap:10px;margin:-10px -10px 8px;padding:10px;border-radius:9px;background:#f2f5f3;cursor:grab;touch-action:none;user-select:none}.note-dialog-titlebar:active{cursor:grabbing}.note-dialog-titlebar h2{margin:0}.note-dialog-titlebar>span{margin-left:auto;color:#718079;font-size:11px}.note-dialog-titlebar .note-dialog-close{position:static;flex:0 0 auto;padding:0 3px;line-height:1;background:transparent}
