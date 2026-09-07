@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent as ReactDragEvent, FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { CSSProperties, DragEvent as ReactDragEvent, FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
 
 type Role = "teacher" | "student" | null;
 type User = { id: string; email?: string; role: Role; realName?: string; nickname?: string };
@@ -14,12 +14,13 @@ type LineAlignmentMap = Record<string, TextAlignment>;
 type TextAlignments = { source: LineAlignmentMap; modern: LineAlignmentMap };
 type EditorTextSelection = { start: number; end: number; phrase: string };
 type TextFont = "myeongjo" | "barun" | "nanumMyeongjo" | "nanumGothic" | "nanumPen" | "nanumBrush" | "nanumCoding" | "gowun" | "gowunDodum" | "notoSerif" | "notoSans" | "pretendard";
-type TextStyle = { font?: TextFont; size?: number; color?: string };
+type TextStyle = { font?: TextFont; size?: number; color?: string; bold?: boolean; italic?: boolean; underline?: boolean };
 type TextStyles = Record<string, TextStyle>;
+type TextFormatRange = TextStyle & { id: string; parent: string; start: number; end: number };
 type Work = {
   id: string; title: string; author?: string; genre?: string; theme?: string; summary?: string;
   source_text?: string; expression_features?: string; commentary: string; published_at?: string;
-  generated_result?: { annotations?: Annotation[]; extraSections?: ExtraSection[]; foldSections?: FoldSection[]; authorImageUrl?: string; sourceCitation?: string; editorBlocks?: EditorBlocks; lineAlignments?: Partial<TextAlignments>; textStyles?: TextStyles };
+  generated_result?: { annotations?: Annotation[]; extraSections?: ExtraSection[]; foldSections?: FoldSection[]; authorImageUrl?: string; sourceCitation?: string; editorBlocks?: EditorBlocks; lineAlignments?: Partial<TextAlignments>; textStyles?: TextStyles; textFormats?: TextFormatRange[] };
 };
 type WorkComment = { id: string; parent_id?: string | null; user_id: string; author_role: "teacher" | "student"; author_name: string; body: string; created_at: string };
 
@@ -38,6 +39,7 @@ const textFontOptions: Array<{ value: TextFont; label: string; family: string }>
   { value: "notoSans", label: "본고딕", family: "'Noto Sans KR',sans-serif" },
   { value: "pretendard", label: "프리텐다드", family: "Pretendard,system-ui,sans-serif" },
 ];
+const annotationToneRgb = ["77,176,255", "112,173,71", "237,125,49", "174,89,233", "255,68,169", "120,120,120", "145,142,255", "238,68,68", "255,196,0", "60,200,181"];
 const emptyBlocks: EditorBlocks = { modernTranslation: "", modernTranslationHidden: false, authorIntro: "", deepInquiry: "" };
 const emptyAlignments = (): TextAlignments => ({ source: {}, modern: {} });
 const blankForm = { title: "", author: "", sourceCitation: "", genre: "현대시", sourceText: "", theme: "", expressionFeatures: "", summary: "", commentary: "", authorImageUrl: "" };
@@ -104,14 +106,28 @@ type PositionedAnnotation = Annotation & { start: number; end: number };
 type AnnotationLayer = "single" | "outer" | "inner" | "deep";
 type LineAnnotation = { annotation: PositionedAnnotation; start: number; end: number; span: number; order: number; layer: AnnotationLayer };
 
-function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children }: {
-  annotation: PositionedAnnotation; layer: AnnotationLayer; rangeStart: boolean; rangeEnd: boolean; children: ReactNode;
+function annotationGradient(tone: number, layer: AnnotationLayer, alpha = .36) {
+  const inset = layer === "deep" ? 28 : layer === "inner" ? 17 : layer === "single" ? 5 : 2; const color = annotationToneRgb[tone % annotationToneRgb.length];
+  return `linear-gradient(to bottom,transparent 0 ${inset}%,rgba(${color},${alpha}) ${inset}% ${100 - inset}%,transparent ${100 - inset}% 100%)`;
+}
+
+function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children, onEdit }: {
+  annotation: PositionedAnnotation; layer: AnnotationLayer; rangeStart: boolean; rangeEnd: boolean; children: ReactNode; onEdit?: (annotation: Annotation, root?: HTMLDivElement) => void;
 }) {
   const annotationTone = annotation.tone % toneNames.length;
   const activate = (active: boolean) => {
     if (active && document.querySelector<HTMLElement>(".poetic-term.annotation-active")?.dataset.annotationId === annotation.id) return;
     document.querySelectorAll<HTMLElement>(".poetic-term.annotation-active").forEach((item) => item.classList.remove("annotation-active"));
-    if (active) document.querySelectorAll<HTMLElement>(".poetic-term").forEach((item) => { if (item.dataset.annotationId === annotation.id) item.classList.add("annotation-active"); });
+    document.querySelectorAll<HTMLElement>(".poem-segment[data-annotation-background]").forEach((segment) => {
+      segment.classList.remove("annotation-segment-active"); segment.style.backgroundImage = segment.dataset.annotationBackground || "";
+    });
+    if (active) {
+      document.querySelectorAll<HTMLElement>(".poetic-term").forEach((item) => { if (item.dataset.annotationId === annotation.id) item.classList.add("annotation-active"); });
+      document.querySelectorAll<HTMLElement>(".poem-segment[data-annotation-ids]").forEach((segment) => {
+        if (!(segment.dataset.annotationIds || "").split(" ").includes(annotation.id)) return;
+        segment.classList.add("annotation-segment-active"); segment.style.backgroundImage = `${annotationGradient(annotationTone, layer, .7)},${segment.dataset.annotationBackground || ""}`;
+      });
+    }
   };
   const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
     detail: { note: annotation.note, tone: annotationTone, x, y },
@@ -127,7 +143,92 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children }: {
     onPointerLeave={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
     onFocus={(event) => { event.stopPropagation(); activate(true); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
     onBlur={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+    onClick={(event) => { if (!onEdit || window.getSelection()?.toString()) return; event.preventDefault(); event.stopPropagation(); onEdit(annotation, event.currentTarget.closest<HTMLDivElement>(".wysiwyg-poem-editor") || undefined); }}
   >{children}<span className="term-tooltip" contentEditable={false}>{annotation.note}</span></mark>;
+}
+
+function cleanTextStyle(style: TextStyle) {
+  return Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined && value !== false && value !== "")) as TextStyle;
+}
+
+function textStyleCss(style?: TextStyle): CSSProperties {
+  const font = textFontOptions.find((item) => item.value === style?.font);
+  return { fontFamily: font?.family, fontSize: style?.size ? `${style.size}px` : undefined, color: style?.color, fontWeight: style?.bold ? 700 : undefined, fontStyle: style?.italic ? "italic" : undefined, textDecoration: style?.underline ? "underline" : undefined };
+}
+
+function formattedInline(text: string, start: number, parent: string, formats: TextFormatRange[]) {
+  if (!text) return "";
+  const end = start + text.length; const active = formats.filter((item) => item.parent === parent && item.start < end && item.end > start);
+  if (!active.length) return text;
+  const boundaries = [...new Set([start, end, ...active.flatMap((item) => [Math.max(start, item.start), Math.min(end, item.end)])])].sort((a, b) => a - b);
+  return boundaries.slice(0, -1).map((segmentStart, index) => {
+    const segmentEnd = boundaries[index + 1]; const style = active.find((item) => item.start <= segmentStart && item.end >= segmentEnd);
+    const content = text.slice(segmentStart - start, segmentEnd - start);
+    return style ? <span className="formatted-text" style={textStyleCss(style)} key={`${segmentStart}-${segmentEnd}`}>{content}</span> : content;
+  });
+}
+
+function remapRange(previousText: string, nextText: string, start: number, end: number) {
+  let prefix = 0; while (prefix < previousText.length && prefix < nextText.length && previousText[prefix] === nextText[prefix]) prefix += 1;
+  let suffix = 0; while (suffix < previousText.length - prefix && suffix < nextText.length - prefix && previousText[previousText.length - 1 - suffix] === nextText[nextText.length - 1 - suffix]) suffix += 1;
+  const oldEnd = previousText.length - suffix; const newEnd = nextText.length - suffix; const delta = nextText.length - previousText.length;
+  const map = (position: number, edge: "start" | "end") => {
+    if (prefix === oldEnd) return position < prefix ? position : position + delta;
+    if (position <= prefix) return position; if (position >= oldEnd) return position + delta;
+    return edge === "start" ? prefix : newEnd;
+  };
+  return { start: Math.max(0, map(start, "start")), end: Math.min(nextText.length, map(end, "end")) };
+}
+
+function remapFormats(formats: TextFormatRange[], parent: string, previousText: string, nextText: string) {
+  return formats.flatMap((item) => {
+    if (item.parent !== parent) return [item]; const mapped = remapRange(previousText, nextText, item.start, item.end);
+    return mapped.end > mapped.start ? [{ ...item, ...mapped }] : [];
+  });
+}
+
+function remapAnnotations(annotations: Annotation[], area: "source" | "modern", previousText: string, nextText: string) {
+  return annotations.flatMap((item) => {
+    if ((item.area || "source") !== area) return [item];
+    if (!Number.isInteger(item.start) || !Number.isInteger(item.end)) {
+      const start = nextText.indexOf(item.phrase); return start >= 0 ? [{ ...item, start, end: start + item.phrase.length }] : [];
+    }
+    const mapped = remapRange(previousText, nextText, item.start as number, item.end as number);
+    return mapped.end > mapped.start ? [{ ...item, ...mapped, phrase: nextText.slice(mapped.start, mapped.end) }] : [];
+  });
+}
+
+function applyFormatRange(formats: TextFormatRange[], parent: string, start: number, end: number, patch: Partial<TextStyle> | null) {
+  if (end <= start) return formats;
+  const other = formats.filter((item) => item.parent !== parent || item.end <= start || item.start >= end);
+  const overlapping = formats.filter((item) => item.parent === parent && item.start < end && item.end > start);
+  const boundaries = [...new Set([start, end, ...overlapping.flatMap((item) => [Math.max(start, item.start), Math.min(end, item.end)])])].sort((a, b) => a - b);
+  const fragments: TextFormatRange[] = [];
+  overlapping.forEach((item) => {
+    if (item.start < start) fragments.push({ ...item, end: start });
+    if (item.end > end) fragments.push({ ...item, start: end });
+  });
+  if (patch) boundaries.slice(0, -1).forEach((segmentStart, index) => {
+    const segmentEnd = boundaries[index + 1]; const existing = overlapping.find((item) => item.start <= segmentStart && item.end >= segmentEnd);
+    const style = cleanTextStyle({ ...(existing || {}), ...patch });
+    delete (style as Partial<TextFormatRange>).id; delete (style as Partial<TextFormatRange>).parent; delete (style as Partial<TextFormatRange>).start; delete (style as Partial<TextFormatRange>).end;
+    if (Object.keys(style).length) fragments.push({ id: crypto.randomUUID(), parent, start: segmentStart, end: segmentEnd, ...style });
+  });
+  const sorted = [...other, ...fragments].sort((a, b) => a.parent.localeCompare(b.parent) || a.start - b.start || a.end - b.end);
+  return sorted.reduce<TextFormatRange[]>((merged, item) => {
+    const previous = merged.at(-1); const left = cleanTextStyle(previous || {}); const right = cleanTextStyle(item);
+    ["id", "parent", "start", "end"].forEach((key) => { delete (left as Record<string, unknown>)[key]; delete (right as Record<string, unknown>)[key]; });
+    if (previous && previous.parent === item.parent && previous.end === item.start && JSON.stringify(left) === JSON.stringify(right)) previous.end = item.end; else merged.push({ ...item });
+    return merged;
+  }, []);
+}
+
+function nearestPhraseRange(text: string, phrase: string, preferred = 0) {
+  const matches: number[] = []; let cursor = 0;
+  while (phrase && cursor <= text.length - phrase.length) { const found = text.indexOf(phrase, cursor); if (found < 0) break; matches.push(found); cursor = found + Math.max(1, phrase.length); }
+  if (!matches.length) return undefined;
+  const start = matches.reduce((best, item) => Math.abs(item - preferred) < Math.abs(best - preferred) ? item : best);
+  return { start, end: start + phrase.length };
 }
 
 function normalizeAlignments(value?: Partial<TextAlignments>): TextAlignments {
@@ -161,14 +262,15 @@ function savedFoldSections(work: Work) {
   return [...saved, ...migrated.filter((item) => !ids.has(item.id))];
 }
 
-function poem(text: string | undefined, annotations: Annotation[], area: "source" | "modern" = "source", alignments: LineAlignmentMap = {}, insertions = new Map<number, ReactNode[]>(), editable = false) {
+function poem(text: string | undefined, annotations: Annotation[], area: "source" | "modern" = "source", alignments: LineAlignmentMap = {}, insertions = new Map<number, ReactNode[]>(), editable = false, formats: TextFormatRange[] = [], onEditAnnotation?: (annotation: Annotation, root?: HTMLDivElement) => void) {
   if (!text) return editable
     ? <>{insertions.get(0)}<p className="poem-line align-left" data-line-index="0" data-line-start="0"><br /></p></>
     : <><p className="empty-copy">작품 원문을 입력하거나 불러와 주세요.</p>{insertions.get(0)}</>;
   const phraseOffsets = new Map<string, number>();
   const exact: PositionedAnnotation[] = annotations.filter((item) => (item.area || "source") === area).flatMap((item) => {
     if (Number.isInteger(item.start) && Number.isInteger(item.end) && (item.end || 0) > (item.start || 0)) {
-      return [{ ...item, start: item.start as number, end: item.end as number }];
+      const start = Math.max(0, Math.min(text.length, item.start as number)); const end = Math.max(start, Math.min(text.length, item.end as number));
+      return end > start ? [{ ...item, phrase: text.slice(start, end), start, end }] : [];
     }
     // Older saved notes had no selection coordinates. Show only one best-match occurrence,
     // never every identical word, until the teacher saves the note again.
@@ -197,7 +299,8 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
         layer: annotationLayers.get(annotation.id) || "single",
       }];
     });
-    const boundaries = [...new Set([0, line.length, ...matches.flatMap((item) => [item.start, item.end])])].sort((a, b) => a - b);
+    const lineFormats = formats.filter((item) => item.parent === area && item.start < lineEnd && item.end > lineStart);
+    const boundaries = [...new Set([0, line.length, ...matches.flatMap((item) => [item.start, item.end]), ...lineFormats.flatMap((item) => [Math.max(0, item.start - lineStart), Math.min(line.length, item.end - lineStart)])])].sort((a, b) => a - b);
     const pieces: ReactNode[] = [];
     boundaries.slice(0, -1).forEach((segmentStart, segmentIndex) => {
       const segmentEnd = boundaries[segmentIndex + 1];
@@ -205,7 +308,9 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
       const active = matches
         .filter((item) => item.start <= segmentStart && item.end >= segmentEnd)
         .sort((a, b) => b.span - a.span || a.order - b.order);
-      let content: ReactNode = line.slice(segmentStart, segmentEnd);
+      const globalStart = lineStart + segmentStart; const globalEnd = lineStart + segmentEnd;
+      const format = lineFormats.find((item) => item.start <= globalStart && item.end >= globalEnd);
+      let content: ReactNode = format ? <span className="formatted-text" style={textStyleCss(format)}>{line.slice(segmentStart, segmentEnd)}</span> : line.slice(segmentStart, segmentEnd);
       for (let index = active.length - 1; index >= 0; index -= 1) {
         const item = active[index];
         content = <AnnotationMark
@@ -213,9 +318,11 @@ function poem(text: string | undefined, annotations: Annotation[], area: "source
           layer={item.layer}
           rangeStart={lineStart + segmentStart === item.annotation.start}
           rangeEnd={lineStart + segmentEnd === item.annotation.end}
+          onEdit={editable ? onEditAnnotation : undefined}
         >{content}</AnnotationMark>;
       }
-      pieces.push(<span className="poem-segment" data-text-start={lineStart + segmentStart} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
+      const background = active.map((item) => annotationGradient(item.annotation.tone, item.layer)).join(",");
+      pieces.push(<span className="poem-segment" data-text-start={globalStart} data-annotation-ids={active.map((item) => item.annotation.id).join(" ") || undefined} data-annotation-background={background || undefined} style={background ? { backgroundImage: background } : undefined} key={`segment-${lineIndex}-${segmentStart}-${segmentEnd}`}>{content}</span>);
     });
     return <Fragment key={`line-${lineIndex}`}>{lineIndex === 0 && insertions.get(0)}<p className={`poem-line align-${alignments[lineIndex] || "left"}${line ? "" : " stanza-break"}`} data-line-index={lineIndex} data-line-start={lineStart}>{pieces.length ? pieces : "\u00a0"}</p>{insertions.get(lineIndex + 1)}</Fragment>;
   });
@@ -241,14 +348,14 @@ function QandA({ comments, user, value, loading, onChange, onSubmit, onReply, on
   </div>;
 }
 
-function Publication({ form, annotations, blocks, alignments, textStyles, extras, foldSections, publishedAt, discussion, editor, sourceLoading, pptImporting, update, updateBlock, updateAlignment, updateTextStyle, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, removeAnnotation, onChooseImage, onImportPptx, onSelectSource, onSelectModern, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
-  form: typeof blankForm; annotations: Annotation[]; blocks: EditorBlocks; alignments: TextAlignments; textStyles: TextStyles; extras: ExtraSection[]; foldSections: FoldSection[]; editor?: boolean;
+function Publication({ form, annotations, blocks, alignments, textStyles, textFormats, extras, foldSections, publishedAt, discussion, editor, sourceLoading, pptImporting, update, updateBlock, updateAlignment, updateTextFormat, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, onEditAnnotation, onChooseImage, onImportPptx, onSelectSource, onSelectModern, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
+  form: typeof blankForm; annotations: Annotation[]; blocks: EditorBlocks; alignments: TextAlignments; textStyles: TextStyles; textFormats: TextFormatRange[]; extras: ExtraSection[]; foldSections: FoldSection[]; editor?: boolean;
   publishedAt?: string; discussion?: ReactNode; sourceLoading?: boolean; pptImporting?: boolean;
   update?: (key: keyof typeof blankForm, value: string) => void; updateBlock?: (key: keyof EditorBlocks, value: string) => void;
   updateAlignment?: (area: "source" | "modern", startLine: number, endLine: number, alignment: TextAlignment) => void;
-  updateTextStyle?: (key: string, style: TextStyle) => void;
+  updateTextFormat?: (parent: string, start: number, end: number, patch: Partial<TextStyle> | null) => void;
   addExtra?: (group: Group) => void; removeExtra?: (id: string) => void; updateExtra?: (id: string, key: "title" | "content", value: string) => void;
-  addFoldSection?: (parent: string) => void; removeFoldSection?: (id: string) => void; updateFoldSection?: (id: string, key: "title" | "content" | "position", value: string | number) => void; removeAnnotation?: (id: string) => void;
+  addFoldSection?: (parent: string) => void; removeFoldSection?: (id: string) => void; updateFoldSection?: (id: string, key: "title" | "content" | "position", value: string | number) => void; onEditAnnotation?: (annotation: Annotation) => void;
   onChooseImage?: (file?: File) => void; onImportPptx?: (file?: File) => void; onSelectSource?: (selection: EditorTextSelection) => void; onSelectModern?: (selection: EditorTextSelection) => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
@@ -261,6 +368,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [pptDropActive, setPptDropActive] = useState(false);
   const [lineSelection, setLineSelection] = useState({ source: { start: 0, end: 0 }, modern: { start: 0, end: 0 } });
+  const [formatSelection, setFormatSelection] = useState({ parent: "", start: 0, end: 0 });
   const closeImageViewer = () => {
     setImageViewerOpen(false);
     requestAnimationFrame(() => imageViewerTrigger.current?.focus());
@@ -289,20 +397,24 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     return { fontFamily: font?.family, fontSize: style.size ? `${style.size}px` : undefined, color: style.color || undefined };
   };
   const textStyleToolbar = (key: string, label: string, area?: "source" | "modern") => {
-    if (!editor) return null; const style = textStyles[key] || {};
+    if (!editor) return null;
+    const selectedRange = formatSelection.parent === key && formatSelection.end > formatSelection.start ? formatSelection : undefined;
+    const style: TextStyle = selectedRange ? (textFormats.find((item) => item.parent === key && item.start <= selectedRange.start && item.end >= selectedRange.end) || {}) : {};
     const selected = area ? lineSelection[area] : undefined;
     const selectedAlignments = area && selected ? Array.from({ length: selected.end - selected.start + 1 }, (_, offset) => alignments[area][selected.start + offset] || "left") : [];
     const alignmentOptions: Array<{ value: TextAlignment; label: string }> = [{ value: "left", label: "왼쪽 정렬" }, { value: "center", label: "가운데 정렬" }, { value: "right", label: "오른쪽 정렬" }];
     return <div className="text-style-toolbar" contentEditable={false} role="toolbar" aria-label={`${label} 편집 도구`}>
       <span className="text-style-heading">편집 도구</span>
-      <select value={style.font || ""} aria-label={`${label} 글꼴`} onChange={(event) => updateTextStyle?.(key, { ...style, font: (event.target.value || undefined) as TextFont | undefined })}>
-        <option value="">현재 기본 글꼴</option>{textFontOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+      <select disabled={!selectedRange} value={style.font || ""} aria-label={`${label} 선택 영역 글꼴`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { font: (event.target.value || undefined) as TextFont | undefined })}>
+        <option value="">기본 글꼴</option>{textFontOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
       </select>
-      <select value={style.size || ""} aria-label={`${label} 글자 크기`} onChange={(event) => updateTextStyle?.(key, { ...style, size: event.target.value ? Number(event.target.value) : undefined })}>
+      <select disabled={!selectedRange} value={style.size || ""} aria-label={`${label} 선택 영역 글자 크기`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { size: event.target.value ? Number(event.target.value) : undefined })}>
         <option value="">기본 크기</option>{[12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 28, 32].map((size) => <option value={size} key={size}>{size}px</option>)}
       </select>
-      <label className="text-color-control" title="글자 색상"><span>글자색</span><input type="color" value={style.color || "#424242"} aria-label={`${label} 글자 색상`} onChange={(event) => updateTextStyle?.(key, { ...style, color: event.target.value })} /></label>
-      <button type="button" disabled={!style.font && !style.size && !style.color} onClick={() => updateTextStyle?.(key, {})}>기본값</button>
+      <label className="text-color-control" title="선택 영역 글자 색상"><span>글자색</span><input disabled={!selectedRange} type="color" value={style.color || "#424242"} aria-label={`${label} 선택 영역 글자 색상`} onChange={(event) => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { color: event.target.value })} /></label>
+      <span className="inline-format-buttons"><button type="button" disabled={!selectedRange} aria-label="굵게" title="굵게" aria-pressed={Boolean(style.bold)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { bold: !style.bold })}><b>가</b></button><button type="button" disabled={!selectedRange} aria-label="기울임" title="기울임" aria-pressed={Boolean(style.italic)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { italic: !style.italic })}><i>가</i></button><button type="button" disabled={!selectedRange} aria-label="밑줄" title="밑줄" aria-pressed={Boolean(style.underline)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, { underline: !style.underline })}><u>가</u></button></span>
+      <button type="button" disabled={!selectedRange} onMouseDown={(event) => event.preventDefault()} onClick={() => selectedRange && updateTextFormat?.(key, selectedRange.start, selectedRange.end, null)}>서식 지우기</button>
+      <small className="format-selection-status">{selectedRange ? `${selectedRange.end - selectedRange.start}자 선택` : "본문을 드래그해 선택"}</small>
       {area && selected && <span className="toolbar-alignment"><b>선택한 줄 정렬</b>{alignmentOptions.map((item) => <button key={item.value} type="button" className={`align-${item.value}`} aria-label={item.label} title={item.label} aria-pressed={selectedAlignments.every((value) => value === item.value)} onMouseDown={(event) => event.preventDefault()} onClick={() => applyAlignment(area, item.value)}><span aria-hidden="true">≡</span></button>)}<small>{selected.start === selected.end ? `${selected.start + 1}행` : `${selected.start + 1}–${selected.end + 1}행`}</small></span>}
     </div>;
   };
@@ -338,6 +450,13 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     const position = foldDropPosition(event.currentTarget, event.clientY); clearFoldDropMarker(event.currentTarget);
     updateFoldSection?.(moving.id, "position", position); draggedFold.current = null;
   };
+  const formattedLines = (text: string, parent: string) => {
+    let offset = 0;
+    return (text ? text.split(/\r?\n/) : [""]).map((line, index) => {
+      const start = offset; offset += line.length + 1;
+      return <span className="section-copy-line" key={`${parent}-formatted-${index}`}>{line ? formattedInline(line, start, parent, textFormats) : "\u00a0"}</span>;
+    });
+  };
   const foldDisclosure = (item: FoldSection) => {
     const lineCount = contentForParent(item.parent) ? contentForParent(item.parent).split(/\r?\n/).length : 0;
     const position = Math.min(Math.max(Number.isInteger(item.position) ? Number(item.position) : lineCount, 0), lineCount);
@@ -350,7 +469,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
       </summary>
       <div className="collapsible-extra-content">
         {editor && textStyleToolbar(`fold:${item.id}`, item.title || "접이식 소제목")}
-        {editor ? <div className="section-copy fold-inline-content" style={styleFor(`fold:${item.id}`)} contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder="내용을 작성하세요." onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }} onBlur={(event) => updateFoldSection?.(item.id, "content", event.currentTarget.innerText.replace(/\r\n/g, "\n"))}>{item.content}</div> : <p className="section-copy" style={styleFor(`fold:${item.id}`)}>{item.content}</p>}
+        {editor ? <div className="section-copy fold-inline-content" style={styleFor(`fold:${item.id}`)} contentEditable="plaintext-only" suppressContentEditableWarning data-placeholder="내용을 작성하세요." onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }} onMouseUp={(event) => captureFormatSelection(`fold:${item.id}`, event.currentTarget)} onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureFormatSelection(`fold:${item.id}`, event.currentTarget); }} onBlur={(event) => { const next = editableValue(event.currentTarget); if (next !== item.content) updateFoldSection?.(item.id, "content", next); }}>{formattedLines(item.content, `fold:${item.id}`)}</div> : <div className="section-copy" style={styleFor(`fold:${item.id}`)}>{formattedLines(item.content, `fold:${item.id}`)}</div>}
       </div>
     </details>;
   };
@@ -360,8 +479,8 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     return insertions;
   };
   const copyWithFolds = (text: string, parent: string, fallback = "내용이 아직 등록되지 않았습니다.") => {
-    const displayed = text || fallback; const insertions = foldInsertions(parent); const lines = displayed.split(/\r?\n/);
-    return <div className="section-copy section-copy-with-folds" style={styleFor(parent)}>{insertions.get(0)}{lines.map((line, index) => <Fragment key={`${parent}-${index}`}><span className="section-copy-line">{line || "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>)}</div>;
+    const displayed = text || fallback; const insertions = foldInsertions(parent); let offset = 0; const lines = displayed.split(/\r?\n/);
+    return <div className="section-copy section-copy-with-folds" style={styleFor(parent)}>{insertions.get(0)}{lines.map((line, index) => { const start = offset; offset += line.length + 1; return <Fragment key={`${parent}-${index}`}><span className="section-copy-line">{line ? formattedInline(line, start, parent, textFormats) : "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>; })}</div>;
   };
   const addFold = (parent: string) => editor && <button type="button" className="add-inline add-collapsible" onClick={() => addFoldSection?.(parent)}>+ 접이식 소제목 추가</button>;
   const extra = (group: Group) => extras.filter((item) => item.group === group).map((item) => <div className="extra-block" key={item.id}>
@@ -370,7 +489,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     {editor && <button type="button" className="delete-inline" onClick={() => removeExtra?.(item.id)}>삭제</button>}{addFold(item.id)}
   </div>);
   const add = (group: Group) => editor && <button type="button" className="add-inline" onClick={() => addExtra?.(group)}>+ 하위 목록 추가</button>;
-  const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.phrase}</span><button type="button" onClick={() => removeAnnotation?.(item.id)}>이 각주 삭제</button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
+  const annotationManager = (area: "source" | "modern") => editor && <div className="annotation-manager inline-annotation-manager"><h4>{area === "source" ? "작품 원문 각주" : "현대어 풀이 각주"}</h4>{annotations.filter((item) => (item.area || "source") === area).length ? <ul>{annotations.filter((item) => (item.area || "source") === area).map((item) => <li key={item.id}><button type="button" className={`annotation-edit-chip tone-${item.tone}`} onClick={() => onEditAnnotation?.(item)}><span>{item.phrase}</span><small>범위·색상·내용 수정</small></button></li>)}</ul> : <p>추가된 각주가 없습니다.</p>}</div>;
   const editableNodeText = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
     if (!(node instanceof HTMLElement)) return Array.from(node.childNodes).map(editableNodeText).join("");
@@ -386,8 +505,14 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     });
     return lines.join("\n");
   };
+  const captureFormatSelection = (parent: string, root: HTMLDivElement) => {
+    const selected = window.getSelection(); if (!selected?.rangeCount) return;
+    const range = selected.getRangeAt(0); if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
+    const text = editableValue(root); const start = Math.min(offsetAtBoundary(root, range.startContainer, range.startOffset), text.length); const end = Math.min(offsetAtBoundary(root, range.endContainer, range.endOffset), text.length);
+    setFormatSelection({ parent, start: Math.min(start, end), end: Math.max(start, end) });
+  };
   const editablePlainBlock = (text: string, parent: string, placeholder: string, label: string, onChange: (value: string) => void) => {
-    const lines = text ? text.split(/\r?\n/) : [""]; const insertions = foldInsertions(parent);
+    const lines = text ? text.split(/\r?\n/) : [""]; const insertions = foldInsertions(parent); let offset = 0;
     return <>{textStyleToolbar(parent, label)}<div
       className="section-copy section-copy-with-folds wysiwyg-text-editor wysiwyg-block-editor"
       contentEditable="plaintext-only"
@@ -400,11 +525,13 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
       data-placeholder={placeholder}
       onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
       onBlur={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; if (next !== text) onChange(next); }}
+      onMouseUp={(event) => captureFormatSelection(parent, event.currentTarget)}
+      onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureFormatSelection(parent, event.currentTarget); }}
       onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
       onDragOver={(event) => handleFoldDragOver(parent, event)}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearFoldDropMarker(event.currentTarget); }}
       onDrop={(event) => handleFoldDrop(parent, event)}
-    >{insertions.get(0)}{lines.map((line, index) => <Fragment key={`${parent}-edit-${index}`}><span className="section-copy-line">{line || "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>)}</div></>;
+    >{insertions.get(0)}{lines.map((line, index) => { const start = offset; offset += line.length + 1; return <Fragment key={`${parent}-edit-${index}`}><span className="section-copy-line">{line ? formattedInline(line, start, parent, textFormats) : "\u00a0"}</span>{insertions.get(index + 1)}</Fragment>; })}</div></>;
   };
   const commitEditable = (area: "source" | "modern", root: HTMLDivElement) => {
     const next = editableValue(root);
@@ -420,7 +547,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
     return editableValue(holder).length;
   };
   const captureEditableSelection = (area: "source" | "modern", root: HTMLDivElement) => {
-    const text = commitEditable(area, root); const selected = window.getSelection();
+    const text = editableValue(root); const selected = window.getSelection();
     if (!selected?.rangeCount) return;
     const range = selected.getRangeAt(0);
     if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
@@ -431,6 +558,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
       start: (text.slice(0, start).match(/\n/g) || []).length,
       end: (text.slice(0, lineEnd).match(/\n/g) || []).length,
     } }));
+    setFormatSelection({ parent: area, start: Math.min(start, end), end: Math.max(start, end) });
     const selection = { start, end, phrase: text.slice(start, end) };
     if (area === "source") onSelectSource?.(selection); else onSelectModern?.(selection);
   };
@@ -456,7 +584,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
       onDragOver={(event) => { if (area === "source" && Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setPptDropActive(true); return; } handleFoldDragOver(area, event); }}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { clearFoldDropMarker(event.currentTarget); setPptDropActive(false); } }}
       onDrop={(event) => { const files = area === "source" ? Array.from(event.dataTransfer.files) : []; if (files.length) { event.preventDefault(); setPptDropActive(false); onImportPptx?.(files.find((item) => item.name.toLowerCase().endsWith(".pptx")) || files[0]); return; } setPptDropActive(false); handleFoldDrop(area, event); }}
-    >{poem(text, annotations, area, alignments[area], foldInsertions(area), true)}</div>;
+    >{poem(text, annotations, area, alignments[area], foldInsertions(area), true, textFormats, (annotation, root) => { if (root) commitEditable(area, root); onEditAnnotation?.(annotation); })}</div>;
   };
   const applyAlignment = (area: "source" | "modern", alignment: TextAlignment) => {
     const node = area === "source" ? sourceEditor.current : modernEditor.current;
@@ -494,8 +622,8 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
         <section id="appreciation" className="literature-section"><div className="section-rule" /><article>
           <h3>작품 원문</h3>
           {editor ? <><label className="source-label">출판 화면에서 작품 원문 직접 편집 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button><button type="button" disabled={pptImporting} onClick={() => pptxInput.current?.click()}>{pptImporting ? "PPT 분석 중…" : "PPT 가져오기"}</button><input ref={pptxInput} hidden type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => { onImportPptx?.(event.target.files?.[0]); event.currentTarget.value = ""; }} /></span></label>{textStyleToolbar("source", "작품 원문", "source")}{editablePoem("source", form.sourceText)}<p className="pptx-drop-hint">PPTX를 편집 박스에 끌어 놓으면 텍스트 상자를 Gemini로 분석해 원문과 각주 설명을 자동 분리합니다.</p>
-            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("source")}</> : <div className="poem" style={styleFor("source")}>{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"))}</div>}{addFold("source")}
-          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{textStyleToolbar("modern", "현대어 풀이", "modern")}{editablePoem("modern", blocks.modernTranslation)}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>이 화면에 각주 색상과 줄 정렬이 그대로 표시됩니다.</span></div>{annotationManager("modern")}</> : <div className="poem" style={styleFor("modern")}>{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"))}</div>}{addFold("modern")}</>}
+            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("source")}</> : <div className="poem" style={styleFor("source")}>{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"), false, textFormats)}</div>}{addFold("source")}
+          {!blocks.modernTranslationHidden && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{textStyleToolbar("modern", "현대어 풀이", "modern")}{editablePoem("modern", blocks.modernTranslation)}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("modern")}</> : <div className="poem" style={styleFor("modern")}>{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"), false, textFormats)}</div>}{addFold("modern")}</>}
           {editor && blocks.modernTranslationHidden && <button type="button" className="add-inline" onClick={onRestoreModern}>+ 현대어 풀이 추가</button>}
           {extra("appreciation")}{add("appreciation")}
         </article></section>
@@ -518,8 +646,8 @@ function Publication({ form, annotations, blocks, alignments, textStyles, extras
 export default function LiteratureApp({ initialWorkId }: { initialWorkId?: string }) {
   const [user, setUser] = useState<User | null>(); const [token, setToken] = useState("");
   const [screen, setScreen] = useState<"library" | "teacher" | "detail" | "profile" | "account">(initialWorkId ? "detail" : "library"); const [works, setWorks] = useState<Work[]>([]); const [selected, setSelected] = useState<Work>();
-  const [form, setForm] = useState(blankForm); const [blocks, setBlocks] = useState(emptyBlocks); const [lineAlignments, setLineAlignments] = useState<TextAlignments>(emptyAlignments); const [textStyles, setTextStyles] = useState<TextStyles>({}); const [editingId, setEditingId] = useState(""); const [annotations, setAnnotations] = useState<Annotation[]>([]); const [extras, setExtras] = useState<ExtraSection[]>([]); const [foldSections, setFoldSections] = useState<FoldSection[]>([]);
-  const [selectedPhrase, setSelectedPhrase] = useState(""); const [selection, setSelection] = useState<{ start: number; end: number }>(); const [selectedArea, setSelectedArea] = useState<"source" | "modern">("source"); const [note, setNote] = useState(""); const [tone, setTone] = useState(0); const [noteOpen, setNoteOpen] = useState(false);
+  const [form, setForm] = useState(blankForm); const [blocks, setBlocks] = useState(emptyBlocks); const [lineAlignments, setLineAlignments] = useState<TextAlignments>(emptyAlignments); const [textStyles, setTextStyles] = useState<TextStyles>({}); const [textFormats, setTextFormats] = useState<TextFormatRange[]>([]); const [editingId, setEditingId] = useState(""); const [annotations, setAnnotations] = useState<Annotation[]>([]); const [extras, setExtras] = useState<ExtraSection[]>([]); const [foldSections, setFoldSections] = useState<FoldSection[]>([]);
+  const [selectedPhrase, setSelectedPhrase] = useState(""); const [selection, setSelection] = useState<{ start: number; end: number }>(); const [selectedArea, setSelectedArea] = useState<"source" | "modern">("source"); const [editingAnnotationId, setEditingAnnotationId] = useState(""); const [note, setNote] = useState(""); const [tone, setTone] = useState(0); const [noteOpen, setNoteOpen] = useState(false);
   const [query, setQuery] = useState(""); const [category, setCategory] = useState(""); const [categories, setCategories] = useState<string[]>([]); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(false); const [activeMenu, setActiveMenu] = useState(""); const [authOpen, setAuthOpen] = useState(false); const [authMessage, setAuthMessage] = useState(""); const [authMode, setAuthMode] = useState<"login" | "signup" | "verify">("login"); const [signupRole, setSignupRole] = useState<"teacher" | "student">("student"); const [teacherInviteCode, setTeacherInviteCode] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [verificationCode, setVerificationCode] = useState(""); const [realName, setRealName] = useState(""); const [nickname, setNickname] = useState(""); const [newPassword, setNewPassword] = useState(""); const [confirmPassword, setConfirmPassword] = useState("");
   const [sourceLoading, setSourceLoading] = useState(false);
   const [pptImporting, setPptImporting] = useState(false);
@@ -528,17 +656,24 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL || "https://lhsstart.synology.me";
   const genreOptions = [...new Set([...classicGenres, ...modernGenres].map((item) => item.label).concat(categories))];
   const headers = () => ({ "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) });
-  const update = (key: keyof typeof blankForm, value: string) => { if (key === "sourceText") setLineAlignments((now) => ({ ...now, source: remapAlignments(form.sourceText, value, now.source) })); setForm((now) => ({ ...now, [key]: value })); };
-  const updateBlock = (key: keyof EditorBlocks, value: string) => { if (key === "modernTranslation") setLineAlignments((now) => ({ ...now, modern: remapAlignments(blocks.modernTranslation, value, now.modern) })); setBlocks((now) => ({ ...now, [key]: value })); };
+  const update = (key: keyof typeof blankForm, value: string) => {
+    const parent = key === "sourceText" ? "source" : key === "theme" ? "theme" : key === "expressionFeatures" ? "expressionFeatures" : undefined; const previous = form[key];
+    if (key === "sourceText") { setLineAlignments((now) => ({ ...now, source: remapAlignments(previous, value, now.source) })); setAnnotations((now) => remapAnnotations(now, "source", previous, value)); }
+    if (parent && previous !== value) setTextFormats((now) => remapFormats(now, parent, previous, value));
+    setForm((now) => ({ ...now, [key]: value }));
+  };
+  const updateBlock = (key: keyof EditorBlocks, value: string) => {
+    const parent = key === "modernTranslation" ? "modern" : key; const previous = String(blocks[key] || "");
+    if (key === "modernTranslation") { setLineAlignments((now) => ({ ...now, modern: remapAlignments(previous, value, now.modern) })); setAnnotations((now) => remapAnnotations(now, "modern", previous, value)); }
+    if (previous !== value) setTextFormats((now) => remapFormats(now, parent, previous, value));
+    setBlocks((now) => ({ ...now, [key]: value }));
+  };
   const updateAlignment = (area: "source" | "modern", startLine: number, endLine: number, alignment: TextAlignment) => setLineAlignments((now) => {
     const areaAlignments = { ...now[area] };
     for (let line = startLine; line <= endLine; line += 1) { if (alignment === "left") delete areaAlignments[line]; else areaAlignments[line] = alignment; }
     return { ...now, [area]: areaAlignments };
   });
-  const updateTextStyle = (key: string, style: TextStyle) => setTextStyles((now) => {
-    const next = { ...now }; const clean = Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined && value !== "")) as TextStyle;
-    if (Object.keys(clean).length) next[key] = clean; else delete next[key]; return next;
-  });
+  const updateTextFormat = (parent: string, start: number, end: number, patch: Partial<TextStyle> | null) => setTextFormats((now) => applyFormatRange(now, parent, start, end, patch));
   useEffect(() => {
     let active = true;
     const initialize = async () => {
@@ -612,16 +747,31 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setScreen("library"); setMessage("회원 탈퇴가 완료되었습니다.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "회원 탈퇴를 완료하지 못했습니다."); } finally { setLoading(false); }
   }
-  function newTeacher() { setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setTextStyles({}); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
-  function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setTextStyles(work.generated_result?.textStyles || {}); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
+  function newTeacher() { setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setTextStyles({}); setTextFormats([]); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
+  function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setTextStyles(work.generated_result?.textStyles || {}); setTextFormats(work.generated_result?.textFormats || []); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
   function editSelected() { if (selected) beginEdit(selected); }
   async function editWork(work: Work) { const res = await fetch(`/api/works/${work.id}`); const data = await res.json(); if (!res.ok) return setMessage(data.error || "작품을 불러오지 못했습니다."); beginEdit(data); }
   function selectText(area: "source" | "modern", selected: EditorTextSelection) { if (selected.phrase.trim()) { setSelectedPhrase(selected.phrase); setSelection({ start: selected.start, end: selected.end }); setSelectedArea(area); } else { setSelectedPhrase(""); setSelection(undefined); } }
-  function addNote(area: "source" | "modern") { if (!selectedPhrase || selectedArea !== area) return setMessage(`${area === "source" ? "작품 원문" : "현대어 풀이"}에서 해설할 구절을 드래그해 선택해 주세요.`); setNote(""); setNoteOpen(true); }
-  function saveNote() { if (!note.trim()) return setMessage("학생에게 보일 각주 설명을 입력해 주세요."); if (!selection) return setMessage("원문에서 다시 구절을 선택해 주세요."); setAnnotations((now) => [...now, { id: crypto.randomUUID(), phrase: selectedPhrase, note: note.trim(), tone, start: selection.start, end: selection.end, area: selectedArea }]); setSelectedPhrase(""); setSelection(undefined); setNoteOpen(false); }
+  function addNote(area: "source" | "modern") { if (!selectedPhrase || selectedArea !== area) return setMessage(`${area === "source" ? "작품 원문" : "현대어 풀이"}에서 해설할 구절을 드래그해 선택해 주세요.`); setEditingAnnotationId(""); setNote(""); setNoteOpen(true); }
+  function editAnnotation(item: Annotation) { setEditingAnnotationId(item.id); setSelectedArea(item.area || "source"); setSelectedPhrase(item.phrase); setSelection(Number.isInteger(item.start) && Number.isInteger(item.end) ? { start: item.start as number, end: item.end as number } : undefined); setTone(item.tone); setNote(item.note); setNoteOpen(true); }
+  function saveNote() {
+    if (!selectedPhrase.trim()) return setMessage("각주로 표시할 범위를 입력해 주세요."); if (!note.trim()) return setMessage("학생에게 보일 각주 설명을 입력해 주세요.");
+    const text = selectedArea === "source" ? form.sourceText : blocks.modernTranslation; const existing = annotations.find((item) => item.id === editingAnnotationId); const preferred = existing?.start ?? selection?.start ?? 0;
+    const located = nearestPhraseRange(text, selectedPhrase, preferred); if (!located) return setMessage("본문에서 입력한 각주 범위를 찾지 못했습니다. 띄어쓰기와 문장부호를 확인해 주세요.");
+    if (editingAnnotationId) setAnnotations((now) => now.map((item) => item.id === editingAnnotationId ? { ...item, phrase: text.slice(located.start, located.end), note: note.trim(), tone, ...located, area: selectedArea } : item));
+    else setAnnotations((now) => [...now, { id: crypto.randomUUID(), phrase: text.slice(located.start, located.end), note: note.trim(), tone, ...located, area: selectedArea }]);
+    setEditingAnnotationId(""); setSelectedPhrase(""); setSelection(undefined); setNoteOpen(false); setMessage("");
+  }
+  function deleteEditingAnnotation() { if (!editingAnnotationId || !window.confirm("이 각주를 삭제할까요?")) return; setAnnotations((now) => now.filter((item) => item.id !== editingAnnotationId)); setEditingAnnotationId(""); setNoteOpen(false); setMessage("각주를 삭제했습니다."); }
   function addExtra(group: Group) { const title = window.prompt("새 하위 목록의 제목을 입력하세요."); if (!title?.trim()) return; setExtras((now) => [...now, { id: crypto.randomUUID(), group, title: title.trim(), content: "내용을 작성하세요." }]); }
   function addFoldSection(parent: string) { const title = window.prompt("접었다 펼칠 소제목을 입력하세요."); if (!title?.trim()) return; setFoldSections((now) => [...now, { id: crypto.randomUUID(), parent, title: title.trim(), content: "내용을 작성하세요." }]); }
-  function updateFoldSection(id: string, key: "title" | "content" | "position", value: string | number) { setFoldSections((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item)); }
+  function updateFoldSection(id: string, key: "title" | "content" | "position", value: string | number) {
+    if (key === "content") { const previous = foldSections.find((item) => item.id === id)?.content || ""; setTextFormats((now) => remapFormats(now, `fold:${id}`, previous, String(value))); }
+    setFoldSections((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  }
+  function changeExtra(id: string, key: "title" | "content", value: string) { if (key === "content") { const previous = extras.find((item) => item.id === id)?.content || ""; setTextFormats((now) => remapFormats(now, id, previous, value)); } setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item)); }
+  function removeExtraSection(id: string) { const foldIds = new Set(foldSections.filter((item) => item.parent === id).map((item) => `fold:${item.id}`)); setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); setTextFormats((now) => now.filter((item) => item.parent !== id && !foldIds.has(item.parent))); }
+  function removeFoldSection(id: string) { setFoldSections((now) => now.filter((item) => item.id !== id)); setTextFormats((now) => now.filter((item) => item.parent !== `fold:${id}`)); }
   function imageFile(file?: File) { if (!file) return; const reader = new FileReader(); reader.onload = () => update("authorImageUrl", String(reader.result || "")); reader.readAsDataURL(file); }
   function searchSources() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); const search = `${form.title} ${form.author} 원문`; window.open(`https://www.google.com/search?q=${encodeURIComponent(search)}`, "_blank", "noopener,noreferrer"); }
   async function loadSource() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); setMessage(""); setSourceLoading(true); try { const res = await fetch("/api/works/source", { method: "POST", headers: headers(), body: JSON.stringify({ title: form.title, author: form.author }) }); const raw = await res.text(); let data: { sourceText?: string; error?: string } = {}; try { data = raw ? JSON.parse(raw) : {}; } catch { throw new Error("서버가 읽을 수 없는 응답을 반환했습니다. NAS 배포 상태를 확인해 주세요."); } if (!res.ok) throw new Error(data.error || "AI 원문을 불러오지 못했습니다."); if (!data.sourceText) throw new Error("AI 응답에 원문이 없습니다."); update("sourceText", data.sourceText); setMessage("AI가 확인한 원문을 입력했습니다. 출판 전에 원문과 저작권 상태를 반드시 확인해 주세요."); } catch (error) { setMessage(error instanceof Error ? error.message : "AI 원문을 불러오지 못했습니다."); } finally { setSourceLoading(false); } }
@@ -638,13 +788,14 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       if (!data.sourceText) throw new Error("PPTX 분석 결과에 작품 원문이 없습니다.");
       setForm((now) => ({ ...now, sourceText: data.sourceText || "", title: now.title || data.title || "", author: now.author || data.author || "" }));
       setLineAlignments((now) => ({ ...now, source: {} }));
+      setTextFormats((now) => now.filter((item) => item.parent !== "source"));
       setAnnotations((now) => [...now.filter((item) => (item.area || "source") !== "source"), ...(data.annotations || [])]);
       setSelectedPhrase(""); setSelection(undefined);
       const warning = data.warning ? ` ${data.warning}` : "";
       setMessage(`${data.slideCount || 1}개 슬라이드에서 원문과 각주 ${data.annotations?.length || 0}개를 가져왔습니다. 출판 전에 분리 결과를 확인해 주세요.${warning}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "PPTX를 가져오지 못했습니다."); } finally { setPptImporting(false); }
   }
-  async function publish(event: FormEvent) { event.preventDefault(); setMessage(""); if (!form.title.trim()) return setMessage("작품명을 입력해 주세요."); if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요."); setLoading(true); try { const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...form, title: form.title.trim(), annotations, extraSections: extras, generatedResult: { editorBlocks: blocks, lineAlignments, textStyles, foldSections, sourceCitation: form.sourceCitation.trim() } }) }); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다."); setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks(""); } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); } }
+  async function publish(event: FormEvent) { event.preventDefault(); setMessage(""); if (!form.title.trim()) return setMessage("작품명을 입력해 주세요."); if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요."); setLoading(true); try { const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...form, title: form.title.trim(), annotations, extraSections: extras, generatedResult: { editorBlocks: blocks, lineAlignments, textStyles, textFormats, foldSections, sourceCitation: form.sourceCitation.trim() } }) }); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다."); setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks(""); } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); } }
   async function deleteWork(value?: unknown) { const workId = typeof value === "string" ? value : editingId; if (!workId || !window.confirm("이 출판물을 삭제할까요? 관련 Q&A 댓글도 함께 삭제되며 되돌릴 수 없습니다.")) return; setLoading(true); try { const res = await fetch(`/api/works/${workId}`, { method: "DELETE", headers: headers() }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setMessage("출판물을 삭제했습니다."); setActiveMenu(""); setEditingId(""); setScreen("library"); searchWorks(""); } catch (error) { setMessage(error instanceof Error ? error.message : "출판물을 삭제하지 못했습니다."); } finally { setLoading(false); } }
   async function loadComments(workId: string) { const res = await fetch(`/api/works/${workId}/comments`, { cache: "no-store" }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "Q&A를 불러오지 못했습니다."); setComments(data); }
   async function loadWork(workId: string) { const res = await fetch(`/api/works/${workId}`); const data = await res.json(); if (!res.ok) { setMessage(data.error || "작품을 불러오지 못했습니다."); setScreen("library"); return; } setSelected(data); setComments([]); setCommentText(""); setScreen("detail"); try { await loadComments(workId); } catch (error) { setMessage(error instanceof Error ? error.message : "Q&A를 불러오지 못했습니다."); } }
@@ -657,12 +808,12 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   return <main><header><a className="brand" href={portalUrl}>{"수\uE8A1니기는 국어시간"}</a><nav><button onClick={openLibrary}>작품 찾기</button>{user?.role === "teacher" && <button onClick={newTeacher}>교사 작업실</button>}<a className="portal-link" href={portalUrl}>국어시간 홈</a></nav><div className="identity">{user ? <><button className="account-link" onClick={openAccount}>{user.role === "teacher" ? "교사" : "학생"} · {user.email}</button><button onClick={() => { sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setMessage(""); setScreen("library"); }}>로그아웃</button></> : <button onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>로그인</button>}</div></header>
     {screen !== "library" && <section className="top"><p>LITERATURE LEARNING PLATFORM</p><h1 className="old-korean-title">{"수\uE8A1니기는 문학시간"}</h1><span>문학 작품의 해설과 Q&amp;A를 한곳에서</span></section>}{message && <div className="notice">{message}</div>}
     {screen === "library" && <><LegacyLiteratureMenu legacyBase={portalUrl} /><GenreMenu selected={category} onSelect={chooseGenre} legacyBase={portalUrl} /><section className="library" id="published-works"><div className="library-head"><div><p>STUDENT LIBRARY</p><h2>{category ? `${category} 작품` : "출판된 작품 자료"}</h2></div>{user?.role === "teacher" && <button className="primary" onClick={newTeacher}>새 해설 작성</button>}</div><div className="search"><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchWorks()} placeholder="작품명 또는 작가 검색" /><select value={category} aria-label="갈래별 작품 보기" onChange={(e) => { const next = e.target.value; setCategory(next); searchWorks(query, next); }}><option value="">모든 갈래</option>{genreOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select><button onClick={() => searchWorks()}>검색</button></div><div className="cards">{works.map((work) => <article key={work.id} onClick={() => openWork(work)}>{user?.role === "teacher" && <div className="card-menu"><button type="button" className="card-menu-trigger" aria-label={`${work.title} 관리 메뉴`} onClick={(event) => { event.stopPropagation(); setActiveMenu((now) => now === work.id ? "" : work.id); }}>⋯</button>{activeMenu === work.id && <div className="card-menu-popover"><button type="button" onClick={(event) => { event.stopPropagation(); editWork(work); }}>수정하기</button><button type="button" className="danger" onClick={(event) => { event.stopPropagation(); deleteWork(work.id); }}>삭제하기</button></div>}</div>}<p>{work.genre || "문학"}</p><h3>{work.title}</h3><span>{work.author || "작가 미입력"}</span><hr /><small className="work-opening">{work.source_text?.split(/\r?\n/).find((line) => line.trim()) || "작품 원문이 등록되지 않았습니다."}</small></article>)}{!works.length && <p className="empty">{category ? `${category}로 출판된 작품이 아직 없습니다.` : "아직 출판된 작품이 없습니다."}</p>}</div></section></>}
-    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} textStyles={textStyles} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} pptImporting={pptImporting} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} updateTextStyle={updateTextStyle} addExtra={addExtra} removeExtra={(id) => { setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); }} updateExtra={(id, key, value) => setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item))} addFoldSection={addFoldSection} removeFoldSection={(id) => setFoldSections((now) => now.filter((item) => item.id !== id))} updateFoldSection={updateFoldSection} removeAnnotation={(id) => setAnnotations((now) => now.filter((item) => item.id !== id))} onChooseImage={imageFile} onImportPptx={importPptx} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><span className={`tone-${item.tone}`}>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><button type="button" onClick={() => setAnnotations((now) => now.filter((value) => value.id !== item.id))}>이 각주 삭제</button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
+    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} textStyles={textStyles} textFormats={textFormats} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} pptImporting={pptImporting} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} updateTextFormat={updateTextFormat} addExtra={addExtra} removeExtra={removeExtraSection} updateExtra={changeExtra} addFoldSection={addFoldSection} removeFoldSection={removeFoldSection} updateFoldSection={updateFoldSection} onEditAnnotation={editAnnotation} onChooseImage={imageFile} onImportPptx={importPptx} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); setTextFormats((now) => now.filter((item) => item.parent !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><button type="button" className={`annotation-edit-chip tone-${item.tone}`} onClick={() => editAnnotation(item)}><span>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><small>범위·색상·내용 수정</small></button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
     {screen === "detail" && !selected && <section className="work-loading">작품을 불러오는 중입니다.</section>}
-    {screen === "detail" && selected && <><section className="detail-actions"><button className="back" onClick={openLibrary}>← 자료실로</button>{user?.role === "teacher" && <><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></>}</section><Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} textStyles={selected.generated_result?.textStyles || {}} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /></>}
+    {screen === "detail" && selected && <><section className="detail-actions"><button className="back" onClick={openLibrary}>← 자료실로</button>{user?.role === "teacher" && <><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></>}</section><Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} textStyles={selected.generated_result?.textStyles || {}} textFormats={selected.generated_result?.textFormats || []} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /></>}
     {screen === "profile" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>MY PROFILE</p><h2>내 정보 관리</h2><span>이름과 닉네임은 작품별 Q&amp;A에 표시됩니다.</span><label>이름<input value={realName} onChange={(event) => setRealName(event.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input value={nickname} maxLength={7} onChange={(event) => setNickname(event.target.value)} placeholder="예: 문학소년" /></label><button className="primary" disabled={loading} onClick={saveProfile}>{loading ? "저장 중…" : "내 정보 저장"}</button><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>계정과 회원 정보는 삭제되지만 작성한 Q&amp;A는 대화 기록을 위해 작성 당시 이름으로 보존됩니다. 탈퇴 전에는 본인이, 이후에는 교사 관리자만 삭제할 수 있습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
     {screen === "account" && user?.role === "teacher" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>TEACHER ACCOUNT</p><h2>교사 정보 관리</h2><span>로그인 계정을 확인하고 새 비밀번호로 변경할 수 있습니다.</span><label>이메일<input type="email" value={user.email || ""} readOnly /></label><form onSubmit={changePassword}><label>새 비밀번호 <small>6자 이상</small><input required minLength={6} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label>새 비밀번호 확인<input required minLength={6} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "변경 중…" : "비밀번호 변경"}</button></form><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>교사 계정은 출판물을 모두 삭제한 뒤 탈퇴할 수 있습니다. 탈퇴한 계정은 복구할 수 없습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
     {authOpen && <div className="modal"><form onSubmit={authenticate}><button type="button" className="x" onClick={() => { setAuthMessage(""); setAuthOpen(false); }}>×</button><p>{authMode === "signup" ? "ACCOUNT SIGN UP" : authMode === "verify" ? "VERIFY EMAIL" : "SIGN IN"}</p><h2>{authMode === "signup" ? "계정 만들기" : authMode === "verify" ? "이메일 확인" : "로그인"}</h2>{authMessage && <div className="auth-message" role="alert">{authMessage}</div>}{authMode === "signup" && <><label>가입 유형<select value={signupRole} onChange={(e) => setSignupRole(e.target.value as "teacher" | "student")}><option value="student">학생</option><option value="teacher">교사</option></select></label>{signupRole === "teacher" && <label>교사 초대 코드<input required type="password" value={teacherInviteCode} onChange={(e) => setTeacherInviteCode(e.target.value)} placeholder="관리자에게 받은 초대 코드" /></label>}<label>이름<input required value={realName} onChange={(e) => setRealName(e.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input required maxLength={7} value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="예: 문학소년" /></label></>}{authMode === "verify" ? <><label>가입 이메일<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label>6자리 확인 코드<input className="verification-code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label><button className="primary" disabled={loading}>{loading ? "확인 중…" : "코드 확인하고 로그인"}</button><button type="button" className="link" disabled={loading} onClick={() => void resendVerification()}>확인 코드 다시 받기</button><button type="button" className="link" onClick={() => { setAuthMessage(""); setAuthMode("login"); }}>로그인으로 돌아가기</button></> : <><label>이메일<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label>비밀번호<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label><button className="primary" disabled={loading}>{authMode === "signup" ? `${signupRole === "teacher" ? "교사" : "학생"} 회원가입` : "로그인"}</button><button type="button" className="link" onClick={() => { setAuthMessage(""); setAuthMode(authMode === "login" ? "signup" : "login"); }}>{authMode === "login" ? "회원가입으로 이동" : "로그인으로 돌아가기"}</button>{authMode === "signup" && <small>교사 가입은 관리자에게 받은 초대 코드가 있어야 완료됩니다.</small>}</>}</form></div>}
-    {noteOpen && <div className="note-dialog-backdrop"><section className="note-dialog"><button type="button" className="note-dialog-close" onClick={() => setNoteOpen(false)}>×</button><h2>각주 내용</h2><p className={`note-dialog-phrase tone-${tone}`}>{selectedPhrase}</p><label>표시 색</label><div className="note-dialog-tones">{toneNames.map((name, index) => <button key={name} className={`tone-${index}${tone === index ? " active" : ""}`} type="button" onClick={() => setTone(index)}>{name}</button>)}</div><label>학생에게 보여 줄 설명</label><textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="이 시어·구절에 대한 해설을 작성하세요." /><div className="note-dialog-actions"><button type="button" onClick={() => setNoteOpen(false)}>취소</button><button type="button" className="save" onClick={saveNote}>각주 넣기</button></div></section></div>}
+    {noteOpen && <div className="note-dialog-backdrop"><section className="note-dialog"><button type="button" className="note-dialog-close" onClick={() => { setEditingAnnotationId(""); setNoteOpen(false); }}>×</button><h2>{editingAnnotationId ? "각주 수정" : "각주 넣기"}</h2><label>각주 범위</label><textarea className={`note-dialog-scope tone-${tone}`} value={selectedPhrase} onChange={(event) => setSelectedPhrase(event.target.value)} placeholder="본문에 있는 구절을 정확히 입력하세요." /><small>범위를 바꾸면 현재 본문에서 가장 가까운 동일 구절을 찾아 연결합니다.</small><label>표시 색</label><div className="note-dialog-tones">{toneNames.map((name, index) => <button key={name} className={`tone-${index}${tone === index ? " active" : ""}`} type="button" onClick={() => setTone(index)}>{name}</button>)}</div><label>학생에게 보여 줄 설명</label><textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="이 시어·구절에 대한 해설을 작성하세요." /><div className="note-dialog-actions">{editingAnnotationId && <button type="button" className="delete-note" onClick={deleteEditingAnnotation}>이 각주 삭제</button>}<button type="button" onClick={() => { setEditingAnnotationId(""); setNoteOpen(false); }}>취소</button><button type="button" className="save" onClick={saveNote}>{editingAnnotationId ? "수정 저장" : "각주 넣기"}</button></div></section></div>}
   </main>;
 }

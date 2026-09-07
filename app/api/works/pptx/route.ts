@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 type SlideShape = {
   slide: number;
   order: number;
+  name?: string;
   text: string;
   x?: number;
   y?: number;
@@ -22,7 +23,7 @@ type GeminiResponse = {
   error?: { message?: string };
 };
 
-type ImportedAnnotation = { phrase?: string; note?: string; tone?: number };
+type ImportedAnnotation = { phrase?: string; note?: string; tone?: number; occurrence?: number };
 type ImportedDeck = { title?: string; author?: string; sourceText?: string; annotations?: ImportedAnnotation[]; warning?: string };
 
 const xmlEntities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
@@ -43,6 +44,11 @@ function colorValue(xml: string) {
   return xml.match(/<a:srgbClr\b[^>]*\bval="([0-9a-f]{6})"/i)?.[1]?.toUpperCase();
 }
 
+function shapeFillValue(xml: string) {
+  const properties = xml.match(/<p:spPr(?:\s[^>]*)?>([\s\S]*?)<\/p:spPr>/i)?.[1] || "";
+  return colorValue(properties.match(/<a:solidFill(?:\s[^>]*)?>([\s\S]*?)<\/a:solidFill>/i)?.[1] || "");
+}
+
 function shapeText(xml: string) {
   const paragraphs = Array.from(xml.matchAll(/<a:p(?:\s[^>]*)?>([\s\S]*?)<\/a:p>/gi), (paragraph) =>
     Array.from(paragraph[1].matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/gi), (run) => decodeXml(run[1])).join("").trimEnd(),
@@ -60,12 +66,13 @@ function extractShapes(files: Record<string, Uint8Array>) {
     const xml = strFromU8(files[name]);
     const candidates = Array.from(xml.matchAll(/<p:sp(?:\s[^>]*)?>[\s\S]*?<\/p:sp>/gi), (match) => match[0]);
     candidates.forEach((shape, order) => {
-      const text = shapeText(shape); if (!text) return;
+      const text = shapeText(shape); const fillColor = shapeFillValue(shape); if (!text && !fillColor) return;
       const sizes = Array.from(shape.matchAll(/<a:(?:rPr|defRPr|endParaRPr)\b[^>]*\bsz="(\d+)"/gi), (match) => Number(match[1]) / 100);
       const bodyStart = shape.search(/<p:txBody\b/i); const geometry = bodyStart >= 0 ? shape.slice(0, bodyStart) : shape;
       shapes.push({
         slide: slideIndex + 1,
         order,
+        name: decodeXml(shape.match(/<p:cNvPr\b[^>]*\bname="([^"]*)"/i)?.[1] || "") || undefined,
         text,
         x: numberAttribute(shape, "off", "x"),
         y: numberAttribute(shape, "off", "y"),
@@ -73,7 +80,7 @@ function extractShapes(files: Record<string, Uint8Array>) {
         height: numberAttribute(shape, "ext", "cy"),
         fontSize: sizes.length ? Math.max(...sizes) : undefined,
         color: colorValue(bodyStart >= 0 ? shape.slice(bodyStart) : shape),
-        fillColor: colorValue(geometry),
+        fillColor: fillColor || colorValue(geometry),
       });
     });
   });
@@ -95,10 +102,20 @@ function compactText(value: string) {
   return { value: chars.join(""), indexes };
 }
 
-function locatePhrase(sourceText: string, phrase: string) {
-  const direct = sourceText.indexOf(phrase);
+function nthIndex(value: string, target: string, occurrence: number) {
+  let found = -1;
+  for (let count = 0; count < occurrence; count += 1) {
+    found = value.indexOf(target, found + 1);
+    if (found < 0) return -1;
+  }
+  return found;
+}
+
+function locatePhrase(sourceText: string, phrase: string, requestedOccurrence?: number) {
+  const occurrence = Math.max(1, Math.round(Number(requestedOccurrence) || 1));
+  const direct = nthIndex(sourceText, phrase, occurrence);
   if (direct >= 0) return { start: direct, end: direct + phrase.length, phrase };
-  const source = compactText(sourceText); const wanted = compactText(phrase).value; const compactIndex = wanted ? source.value.indexOf(wanted) : -1;
+  const source = compactText(sourceText); const wanted = compactText(phrase).value; const compactIndex = wanted ? nthIndex(source.value, wanted, occurrence) : -1;
   if (compactIndex < 0) return undefined;
   const start = source.indexes[compactIndex]; const end = source.indexes[compactIndex + wanted.length - 1] + 1;
   return { start, end, phrase: sourceText.slice(start, end) };
@@ -124,10 +141,11 @@ export async function POST(request: Request) {
 
 규칙:
 1. 시·고전 작품의 실제 본문만 sourceText에 슬라이드 순서와 행 구분을 보존해 넣으세요. 제목, 작가, 출처, 페이지 번호, 설명 문장, 화살표 라벨은 빼세요.
-2. 원문의 특정 구절을 설명하는 텍스트는 annotations 배열로 만드세요. phrase는 sourceText 안에 실제로 존재하는 구절을 띄어쓰기와 문장부호까지 정확히 복사하세요. note에는 설명만 넣으세요.
-3. 각주 색상 tone은 파랑=0, 초록=1, 주황=2, 보라=3, 분홍=4, 회색=5, 연보라=6, 빨강=7, 노랑=8, 청록=9 중 가장 가까운 번호를 쓰세요.
-4. 확신할 수 없는 문구를 원문이나 각주로 추측하지 마세요. 제목과 작가를 명확히 알 수 있을 때만 title, author에 넣으세요.
-5. {"title":"","author":"","sourceText":"","annotations":[{"phrase":"","note":"","tone":0}],"warning":""} JSON만 반환하세요.
+2. 원문의 특정 구절을 설명하는 텍스트는 annotations 배열로 만드세요. phrase는 sourceText 안에 실제로 존재하는 구절을 띄어쓰기와 문장부호까지 정확히 복사하세요. note에는 설명만 넣으세요. 같은 phrase가 여러 번 나오면 occurrence에 sourceText 기준 1부터 시작하는 등장 순서를 넣으세요.
+3. 부분 겹침 또는 포함 관계인 각주도 합치거나 버리지 말고 각각 독립된 annotations 항목으로 보존하세요. 각 범위의 시작과 끝이 다르면 별개의 각주입니다.
+4. 각주 색상 tone은 파랑=0, 초록=1, 주황=2, 보라=3, 분홍=4, 회색=5, 연보라=6, 빨강=7, 노랑=8, 청록=9 중 가장 가까운 번호를 쓰세요. 글자색뿐 아니라 해당 원문 구절과 공간적으로 겹치는, 텍스트가 없는 배경 도형의 fillColor와 x/y/width/height를 우선 참고하세요.
+5. 확신할 수 없는 문구를 원문이나 각주로 추측하지 마세요. 제목과 작가를 명확히 알 수 있을 때만 title, author에 넣으세요.
+6. {"title":"","author":"","sourceText":"","annotations":[{"phrase":"","note":"","tone":0,"occurrence":1}],"warning":""} JSON만 반환하세요.
 
 PowerPoint 구조 데이터:
 ${JSON.stringify(deck)}`;
@@ -145,7 +163,7 @@ ${JSON.stringify(deck)}`;
     const sourceText = String(imported.sourceText || "").replace(/\r\n/g, "\n").trim();
     if (!sourceText) throw new Error("슬라이드에서 작품 원문을 분리하지 못했습니다. 원문과 설명이 각각 텍스트 상자로 작성되어 있는지 확인해 주세요.");
     const annotations = (Array.isArray(imported.annotations) ? imported.annotations : []).flatMap((item, index) => {
-      const note = String(item.note || "").trim(); const located = locatePhrase(sourceText, String(item.phrase || "").trim());
+      const note = String(item.note || "").trim(); const located = locatePhrase(sourceText, String(item.phrase || "").trim(), item.occurrence);
       if (!note || !located) return [];
       return [{ id: `pptx-${Date.now()}-${index}`, ...located, note, tone: Math.min(9, Math.max(0, Math.round(Number(item.tone) || 0))), area: "source" as const }];
     });
