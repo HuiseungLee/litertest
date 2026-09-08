@@ -29,11 +29,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     await requireRole(request, "teacher");
     const { id } = await context.params;
-    const body = await request.json() as { action?: "toggleRestriction" | "promote" };
+    const body = await request.json() as { action?: "toggleRestriction" | "setGrade"; grade?: number };
     const account = await studentAccount(id);
     const metadata = { ...(account.app_metadata || {}) };
     if (body.action === "toggleRestriction") metadata.activity_restricted = !Boolean(metadata.activity_restricted);
-    else if (body.action === "promote") metadata.student_grade = Math.min(3, Math.max(1, Number(metadata.student_grade) || 1) + 1);
+    else if (body.action === "setGrade") {
+      const grade = Number(body.grade);
+      if (!Number.isInteger(grade) || grade < 1 || grade > 3) throw new Error("학생 등급을 다시 선택해 주세요.");
+      metadata.student_grade = grade;
+    }
     else throw new Error("지원하지 않는 학생 관리 작업입니다.");
     const response = await authAdmin(`users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ app_metadata: metadata }) });
     const result = await response.json().catch(() => ({}));
