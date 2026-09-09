@@ -202,6 +202,12 @@ function remapAnnotations(annotations: Annotation[], area: "source" | "modern", 
   });
 }
 
+function editorContentKey(parent: string, text: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+  return `${parent}-${text.length}-${hash >>> 0}`;
+}
+
 function applyFormatRange(formats: TextFormatRange[], parent: string, start: number, end: number, patch: Partial<TextStyle> | null) {
   if (end <= start) return formats;
   const parentFormats = formats.filter((item) => item.parent === parent && item.end > item.start);
@@ -370,7 +376,7 @@ function PostManagement({ questions, loading, onRefresh, onReply, onDelete }: { 
   </section>;
 }
 
-function Publication({ form, annotations, blocks, alignments, textStyles, textFormats, extras, foldSections, publishedAt, discussion, editor, sourceLoading, pptImporting, update, updateBlock, updateAlignment, updateTextFormat, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, onEditAnnotation, onChooseImage, onImportPptx, onSelectSource, onSelectModern, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
+function Publication({ form, annotations, blocks, alignments, textStyles, textFormats, extras, foldSections, publishedAt, discussion, editor, sourceLoading, pptImporting, update, updateBlock, updateAlignment, updateTextFormat, addExtra, removeExtra, updateExtra, addFoldSection, removeFoldSection, updateFoldSection, onEditAnnotation, onChooseImage, onImportPptx, onSelectSource, onSelectModern, onDraftChange, onAddNote, onSearchSources, onLoadSource, onDeleteModern, onRestoreModern }: {
   form: typeof blankForm; annotations: Annotation[]; blocks: EditorBlocks; alignments: TextAlignments; textStyles: TextStyles; textFormats: TextFormatRange[]; extras: ExtraSection[]; foldSections: FoldSection[]; editor?: boolean;
   publishedAt?: string; discussion?: ReactNode; sourceLoading?: boolean; pptImporting?: boolean;
   update?: (key: keyof typeof blankForm, value: string) => void; updateBlock?: (key: keyof EditorBlocks, value: string) => void;
@@ -378,7 +384,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
   updateTextFormat?: (parent: string, start: number, end: number, patch: Partial<TextStyle> | null) => void;
   addExtra?: (group: Group) => void; removeExtra?: (id: string) => void; updateExtra?: (id: string, key: "title" | "content", value: string) => void;
   addFoldSection?: (parent: string) => void; removeFoldSection?: (id: string) => void; updateFoldSection?: (id: string, key: "title" | "content" | "position", value: string | number) => void; onEditAnnotation?: (annotation: Annotation) => void;
-  onChooseImage?: (file?: File) => void; onImportPptx?: (file?: File) => void; onSelectSource?: (selection: EditorTextSelection) => void; onSelectModern?: (selection: EditorTextSelection) => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
+  onChooseImage?: (file?: File) => void; onImportPptx?: (file?: File) => void; onSelectSource?: (selection: EditorTextSelection) => void; onSelectModern?: (selection: EditorTextSelection) => void; onDraftChange?: (parent: string, value: string) => void; onAddNote?: (area: "source" | "modern") => void; onSearchSources?: () => void; onLoadSource?: () => void; onDeleteModern?: () => void; onRestoreModern?: () => void;
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
   const pptxInput = useRef<HTMLInputElement>(null);
@@ -505,7 +511,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
       </summary>
       <div className="collapsible-extra-content">
         {editor && textStyleToolbar(`fold:${item.id}`, item.title || "접이식 소제목")}
-        {editor ? <div className="section-copy fold-inline-content" style={styleFor(`fold:${item.id}`)} contentEditable="plaintext-only" suppressContentEditableWarning data-format-parent={`fold:${item.id}`} data-placeholder="내용을 작성하세요." onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }} onMouseUp={(event) => captureFormatSelection(`fold:${item.id}`, event.currentTarget)} onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureFormatSelection(`fold:${item.id}`, event.currentTarget); }} onBlur={(event) => { const next = editableValue(event.currentTarget); if (next !== item.content) updateFoldSection?.(item.id, "content", next); }}>{formattedLines(item.content, `fold:${item.id}`)}</div> : <div className="section-copy" style={styleFor(`fold:${item.id}`)}>{formattedLines(item.content, `fold:${item.id}`)}</div>}
+        {editor ? <div key={editorContentKey(`fold:${item.id}`, item.content)} className="section-copy fold-inline-content" style={styleFor(`fold:${item.id}`)} contentEditable="plaintext-only" suppressContentEditableWarning data-format-parent={`fold:${item.id}`} data-placeholder="내용을 작성하세요." onInput={(event) => onDraftChange?.(`fold:${item.id}`, editableValue(event.currentTarget))} onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }} onMouseUp={(event) => captureFormatSelection(`fold:${item.id}`, event.currentTarget)} onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureFormatSelection(`fold:${item.id}`, event.currentTarget); }} onBlur={(event) => { const next = editableValue(event.currentTarget); onDraftChange?.(`fold:${item.id}`, next); if (next !== item.content) updateFoldSection?.(item.id, "content", next); }}>{formattedLines(item.content, `fold:${item.id}`)}</div> : <div className="section-copy" style={styleFor(`fold:${item.id}`)}>{formattedLines(item.content, `fold:${item.id}`)}</div>}
       </div>
     </details>;
   };
@@ -561,6 +567,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
   const editablePlainBlock = (text: string, parent: string, placeholder: string, label: string, onChange: (value: string) => void) => {
     const lines = text ? text.split(/\r?\n/) : [""]; const insertions = foldInsertions(parent); let offset = 0;
     return <>{textStyleToolbar(parent, label)}<div
+      key={editorContentKey(parent, text)}
       className="section-copy section-copy-with-folds wysiwyg-text-editor wysiwyg-block-editor"
       contentEditable="plaintext-only"
       suppressContentEditableWarning
@@ -571,8 +578,8 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
       style={styleFor(parent)}
       data-empty={text ? "false" : "true"}
       data-placeholder={placeholder}
-      onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
-      onBlur={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; if (next !== text) onChange(next); }}
+      onInput={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; onDraftChange?.(parent, next); }}
+      onBlur={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; onDraftChange?.(parent, next); if (next !== text) onChange(next); }}
       onMouseUp={(event) => captureFormatSelection(parent, event.currentTarget)}
       onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureFormatSelection(parent, event.currentTarget); }}
       onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
@@ -583,6 +590,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
   };
   const commitEditable = (area: "source" | "modern", root: HTMLDivElement) => {
     const next = editableValue(root);
+    onDraftChange?.(area, next);
     if (area === "source" && next !== form.sourceText) update?.("sourceText", next);
     if (area === "modern" && next !== blocks.modernTranslation) updateBlock?.("modernTranslation", next);
     root.dataset.empty = next ? "false" : "true";
@@ -614,6 +622,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
     const rootRef = area === "source" ? sourceEditor : modernEditor;
     const placeholder = area === "source" ? "작품 원문을 입력하거나 불러와 주세요." : "현대어 풀이를 입력해 주세요.";
     return <div
+      key={editorContentKey(area, text)}
       ref={rootRef}
       className={`poem editor-poem wysiwyg-poem-editor wysiwyg-block-editor ${area}-wysiwyg-editor${area === "source" && pptDropActive ? " ppt-drop-active" : ""}`}
       contentEditable="plaintext-only"
@@ -625,7 +634,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
       style={styleFor(area)}
       data-empty={text ? "false" : "true"}
       data-placeholder={placeholder}
-      onInput={(event) => { event.currentTarget.dataset.empty = editableValue(event.currentTarget) ? "false" : "true"; }}
+      onInput={(event) => { const next = editableValue(event.currentTarget); event.currentTarget.dataset.empty = next ? "false" : "true"; onDraftChange?.(area, next); }}
       onBlur={(event) => { commitEditable(area, event.currentTarget); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
       onMouseUp={(event) => captureEditableSelection(area, event.currentTarget)}
       onKeyUp={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey || ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) captureEditableSelection(area, event.currentTarget); }}
@@ -704,6 +713,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   const [comments, setComments] = useState<WorkComment[]>([]); const [commentText, setCommentText] = useState("");
   const [students, setStudents] = useState<ManagedStudent[]>([]); const [studentLoading, setStudentLoading] = useState(false);
   const [managedQuestions, setManagedQuestions] = useState<ModeratedQuestion[]>([]); const [postLoading, setPostLoading] = useState(false);
+  const editorDrafts = useRef<Record<string, string>>({});
   const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL; const publicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL || "https://lhsstart.synology.me";
   const genreOptions = [...new Set([...classicGenres, ...modernGenres].map((item) => item.label).concat(categories))];
@@ -807,8 +817,8 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setScreen("library"); setMessage("회원 탈퇴가 완료되었습니다.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "회원 탈퇴를 완료하지 못했습니다."); } finally { setLoading(false); }
   }
-  function newTeacher() { setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setTextStyles({}); setTextFormats([]); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
-  function beginEdit(work: Work) { setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setTextStyles(work.generated_result?.textStyles || {}); setTextFormats(work.generated_result?.textFormats || []); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
+  function newTeacher() { editorDrafts.current = {}; setMessage(""); setEditingId(""); setForm(blankForm); setBlocks(emptyBlocks); setLineAlignments(emptyAlignments()); setTextStyles({}); setTextFormats([]); setAnnotations([]); setExtras([]); setFoldSections([]); setScreen("teacher"); }
+  function beginEdit(work: Work) { editorDrafts.current = {}; setEditingId(work.id); setForm({ title: work.title || "", author: work.author || "", sourceCitation: work.generated_result?.sourceCitation || "", genre: work.genre || "현대시", sourceText: work.source_text || "", theme: work.theme || "", expressionFeatures: work.expression_features || "", summary: work.summary || "", commentary: work.commentary || "", authorImageUrl: work.generated_result?.authorImageUrl || "" }); setBlocks(work.generated_result?.editorBlocks || emptyBlocks); setLineAlignments(normalizeAlignments(work.generated_result?.lineAlignments)); setTextStyles(work.generated_result?.textStyles || {}); setTextFormats(work.generated_result?.textFormats || []); setAnnotations(work.generated_result?.annotations || []); setExtras(savedExtraSections(work)); setFoldSections(savedFoldSections(work)); setScreen("teacher"); }
   function editSelected() { if (selected) beginEdit(selected); }
   async function editWork(work: Work) { const res = await fetch(`/api/works/${work.id}`); const data = await res.json(); if (!res.ok) return setMessage(data.error || "작품을 불러오지 못했습니다."); beginEdit(data); }
   function selectText(area: "source" | "modern", selected: EditorTextSelection) { if (selected.phrase.trim()) { setSelectedPhrase(selected.phrase); setSelection({ start: selected.start, end: selected.end }); setSelectedArea(area); } else { setSelectedPhrase(""); setSelection(undefined); } }
@@ -838,7 +848,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   function removeFoldSection(id: string) { setFoldSections((now) => now.filter((item) => item.id !== id)); setTextFormats((now) => now.filter((item) => item.parent !== `fold:${id}`)); }
   function imageFile(file?: File) { if (!file) return; const reader = new FileReader(); reader.onload = () => update("authorImageUrl", String(reader.result || "")); reader.readAsDataURL(file); }
   function searchSources() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); const search = `${form.title} ${form.author} 원문`; window.open(`https://www.google.com/search?q=${encodeURIComponent(search)}`, "_blank", "noopener,noreferrer"); }
-  async function loadSource() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); setMessage(""); setSourceLoading(true); try { const res = await fetch("/api/works/source", { method: "POST", headers: headers(), body: JSON.stringify({ title: form.title, author: form.author }) }); const raw = await res.text(); let data: { sourceText?: string; error?: string } = {}; try { data = raw ? JSON.parse(raw) : {}; } catch { throw new Error("서버가 읽을 수 없는 응답을 반환했습니다. NAS 배포 상태를 확인해 주세요."); } if (!res.ok) throw new Error(data.error || "AI 원문을 불러오지 못했습니다."); if (!data.sourceText) throw new Error("AI 응답에 원문이 없습니다."); update("sourceText", data.sourceText); setMessage("AI가 확인한 원문을 입력했습니다. 출판 전에 원문과 저작권 상태를 반드시 확인해 주세요."); } catch (error) { setMessage(error instanceof Error ? error.message : "AI 원문을 불러오지 못했습니다."); } finally { setSourceLoading(false); } }
+  async function loadSource() { if (!form.title.trim() || !form.author.trim()) return setMessage("작품명과 작가명을 먼저 입력해 주세요."); setMessage(""); setSourceLoading(true); try { const res = await fetch("/api/works/source", { method: "POST", headers: headers(), body: JSON.stringify({ title: form.title, author: form.author }) }); const raw = await res.text(); let data: { sourceText?: string; error?: string } = {}; try { data = raw ? JSON.parse(raw) : {}; } catch { throw new Error("서버가 읽을 수 없는 응답을 반환했습니다. NAS 배포 상태를 확인해 주세요."); } if (!res.ok) throw new Error(data.error || "AI 원문을 불러오지 못했습니다."); if (!data.sourceText) throw new Error("AI 응답에 원문이 없습니다."); delete editorDrafts.current.source; update("sourceText", data.sourceText); setMessage("AI가 확인한 원문을 입력했습니다. 출판 전에 원문과 저작권 상태를 반드시 확인해 주세요."); } catch (error) { setMessage(error instanceof Error ? error.message : "AI 원문을 불러오지 못했습니다."); } finally { setSourceLoading(false); } }
   async function importPptx(file?: File) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".pptx")) return setMessage("PowerPoint .pptx 파일만 가져올 수 있습니다.");
@@ -850,6 +860,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       const data = await res.json().catch(() => ({})) as { title?: string; author?: string; sourceText?: string; annotations?: Annotation[]; warning?: string; slideCount?: number; error?: string };
       if (!res.ok) throw new Error(data.error || "PPTX를 분석하지 못했습니다.");
       if (!data.sourceText) throw new Error("PPTX 분석 결과에 작품 원문이 없습니다.");
+      delete editorDrafts.current.source;
       setForm((now) => ({ ...now, sourceText: data.sourceText || "", title: now.title || data.title || "", author: now.author || data.author || "" }));
       setLineAlignments((now) => ({ ...now, source: {} }));
       setTextFormats((now) => now.filter((item) => item.parent !== "source"));
@@ -859,7 +870,46 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
       setMessage(`${data.slideCount || 1}개 슬라이드에서 원문과 각주 ${data.annotations?.length || 0}개를 가져왔습니다. 출판 전에 분리 결과를 확인해 주세요.${warning}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "PPTX를 가져오지 못했습니다."); } finally { setPptImporting(false); }
   }
-  async function publish(event: FormEvent) { event.preventDefault(); setMessage(""); if (!form.title.trim()) return setMessage("작품명을 입력해 주세요."); if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요."); setLoading(true); try { const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...form, title: form.title.trim(), annotations, extraSections: extras, generatedResult: { editorBlocks: blocks, lineAlignments, textStyles, textFormats, foldSections, sourceCitation: form.sourceCitation.trim() } }) }); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다."); setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks(""); } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); } }
+  async function publish(event: FormEvent) {
+    event.preventDefault(); setMessage("");
+    const drafts = editorDrafts.current;
+    const finalForm = { ...form, sourceText: drafts.source ?? form.sourceText, theme: drafts.theme ?? form.theme, expressionFeatures: drafts.expressionFeatures ?? form.expressionFeatures };
+    const finalBlocks = { ...blocks, modernTranslation: drafts.modern ?? blocks.modernTranslation, authorIntro: drafts.authorIntro ?? blocks.authorIntro, deepInquiry: drafts.deepInquiry ?? blocks.deepInquiry };
+    const finalExtras = extras.map((item) => ({ ...item, content: drafts[item.id] ?? item.content }));
+    const finalFoldSections = foldSections.map((item) => ({ ...item, content: drafts[`fold:${item.id}`] ?? item.content }));
+    if (!finalForm.title.trim()) return setMessage("작품명을 입력해 주세요.");
+    if (!token) return setMessage("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
+
+    const changedParents: Array<[string, string, string]> = [
+      ["source", form.sourceText, finalForm.sourceText], ["modern", blocks.modernTranslation, finalBlocks.modernTranslation],
+      ["theme", form.theme, finalForm.theme], ["expressionFeatures", form.expressionFeatures, finalForm.expressionFeatures],
+      ["authorIntro", blocks.authorIntro, finalBlocks.authorIntro], ["deepInquiry", blocks.deepInquiry, finalBlocks.deepInquiry],
+      ...extras.map((item) => [item.id, item.content, finalExtras.find((saved) => saved.id === item.id)?.content || ""] as [string, string, string]),
+      ...foldSections.map((item) => [`fold:${item.id}`, item.content, finalFoldSections.find((saved) => saved.id === item.id)?.content || ""] as [string, string, string]),
+    ];
+    let finalTextFormats = textFormats;
+    changedParents.forEach(([parent, previous, next]) => { if (previous !== next) finalTextFormats = remapFormats(finalTextFormats, parent, previous, next); });
+    const parentLengths = new Map(changedParents.map(([parent, , next]) => [parent, next.length]));
+    finalTextFormats = finalTextFormats.flatMap((item) => {
+      const length = parentLengths.get(item.parent); if (length === undefined) return [];
+      const start = Math.max(0, Math.min(length, Number.isInteger(item.start) ? item.start : 0)); const end = Math.max(start, Math.min(length, Number.isInteger(item.end) ? item.end : start));
+      const style = cleanTextStyle(item); return end > start && Object.keys(style).length ? [{ id: item.id || crypto.randomUUID(), parent: item.parent, start, end, ...style }] : [];
+    });
+    let finalAnnotations = remapAnnotations(annotations, "source", form.sourceText, finalForm.sourceText);
+    finalAnnotations = remapAnnotations(finalAnnotations, "modern", blocks.modernTranslation, finalBlocks.modernTranslation);
+    const finalAlignments = {
+      source: form.sourceText === finalForm.sourceText ? lineAlignments.source : remapAlignments(form.sourceText, finalForm.sourceText, lineAlignments.source),
+      modern: blocks.modernTranslation === finalBlocks.modernTranslation ? lineAlignments.modern : remapAlignments(blocks.modernTranslation, finalBlocks.modernTranslation, lineAlignments.modern),
+    };
+
+    setForm(finalForm); setBlocks(finalBlocks); setExtras(finalExtras); setFoldSections(finalFoldSections); setTextFormats(finalTextFormats); setAnnotations(finalAnnotations); setLineAlignments(finalAlignments);
+    setLoading(true);
+    try {
+      const res = await fetch(editingId ? `/api/works/${editingId}` : "/api/works", { method: editingId ? "PATCH" : "POST", headers: headers(), body: JSON.stringify({ ...finalForm, title: finalForm.title.trim(), annotations: finalAnnotations, extraSections: finalExtras, generatedResult: { editorBlocks: finalBlocks, lineAlignments: finalAlignments, textStyles, textFormats: finalTextFormats, foldSections: finalFoldSections, sourceCitation: finalForm.sourceCitation.trim() } }) });
+      const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.error || data.message || "해설을 출판하지 못했습니다.");
+      editorDrafts.current = {}; setMessage(editingId ? "수정한 해설을 다시 출판했습니다." : "해설을 출판했습니다. 학생 자료실에서 바로 검색할 수 있습니다."); setScreen("library"); void searchWorks("");
+    } catch (error) { setMessage(error instanceof Error && error.message ? error.message : "출판하지 못했습니다."); } finally { setLoading(false); }
+  }
   async function deleteWork(value?: unknown) { const workId = typeof value === "string" ? value : editingId; if (!workId || !window.confirm("이 출판물을 삭제할까요? 관련 Q&A 댓글도 함께 삭제되며 되돌릴 수 없습니다.")) return; setLoading(true); try { const res = await fetch(`/api/works/${workId}`, { method: "DELETE", headers: headers() }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setMessage("출판물을 삭제했습니다."); setActiveMenu(""); setEditingId(""); setScreen("library"); searchWorks(""); } catch (error) { setMessage(error instanceof Error ? error.message : "출판물을 삭제하지 못했습니다."); } finally { setLoading(false); } }
   async function loadComments(workId: string) { const res = await fetch(`/api/works/${workId}/comments`, { cache: "no-store" }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "Q&A를 불러오지 못했습니다."); setComments(data); }
   async function loadWork(workId: string) { const res = await fetch(`/api/works/${workId}`); const data = await res.json(); if (!res.ok) { setMessage(data.error || "작품을 불러오지 못했습니다."); setScreen("library"); return; } setSelected(data); setComments([]); setCommentText(""); setScreen("detail"); try { await loadComments(workId); } catch (error) { setMessage(error instanceof Error ? error.message : "Q&A를 불러오지 못했습니다."); } }
@@ -872,7 +922,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   return <main><header><a className="brand" href={portalUrl}>{"수\uE8A1니기는 국어시간"}</a><nav><button onClick={openLibrary}>작품 찾기</button>{user?.role === "teacher" && <><button onClick={newTeacher}>교사 작업실</button><button onClick={openStudents}>학생 관리</button><button onClick={openPosts}>게시물 관리</button></>}<a className="portal-link" href={portalUrl}>국어시간 홈</a></nav><div className="identity">{user ? <><button className="account-link" onClick={openAccount}>{user.role === "teacher" ? "교사" : "학생"} · {user.email}</button><button onClick={() => { sessionStorage.removeItem("literary-session"); setUser(null); setToken(""); setMessage(""); setScreen("library"); }}>로그아웃</button></> : <button onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>로그인</button>}</div></header>
     {screen !== "library" && <section className={`top${screen === "detail" ? " detail-top" : ""}`}><p>LITERATURE LEARNING PLATFORM</p><h1 className="old-korean-title">{"수\uE8A1니기는 문학시간"}</h1><span>문학을 바라보는 깊고 새로운 시선</span></section>}{message && <div className="notice">{message}</div>}
     {screen === "library" && <><LegacyLiteratureMenu legacyBase={portalUrl} /><GenreMenu selected={category} onSelect={chooseGenre} legacyBase={portalUrl} /><section className="library" id="published-works"><div className="library-head"><div><p>STUDENT LIBRARY</p><h2>{category ? `${category} 작품` : "출판된 작품 자료"}</h2></div>{user?.role === "teacher" && <button className="primary" onClick={newTeacher}>새 해설 작성</button>}</div><div className="search"><input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchWorks()} placeholder="작품명 또는 작가 검색" /><select value={category} aria-label="갈래별 작품 보기" onChange={(e) => { const next = e.target.value; setCategory(next); searchWorks(query, next); }}><option value="">모든 갈래</option>{genreOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select><button onClick={() => searchWorks()}>검색</button></div><div className="cards">{works.map((work) => <article key={work.id} onClick={() => openWork(work)}>{user?.role === "teacher" && <div className="card-menu"><button type="button" className="card-menu-trigger" aria-label={`${work.title} 관리 메뉴`} onClick={(event) => { event.stopPropagation(); setActiveMenu((now) => now === work.id ? "" : work.id); }}>⋯</button>{activeMenu === work.id && <div className="card-menu-popover"><button type="button" onClick={(event) => { event.stopPropagation(); editWork(work); }}>수정하기</button><button type="button" className="danger" onClick={(event) => { event.stopPropagation(); deleteWork(work.id); }}>삭제하기</button></div>}</div>}<p>{work.genre || "문학"}</p><h3>{work.title}</h3><span>{work.author || "작가 미입력"}</span><hr /><small className="work-opening">{work.source_text?.split(/\r?\n/).find((line) => line.trim()) || "작품 원문이 등록되지 않았습니다."}</small></article>)}{!works.length && <p className="empty">{category ? `${category}로 출판된 작품이 아직 없습니다.` : "아직 출판된 작품이 없습니다."}</p>}</div></section></>}
-    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} textStyles={textStyles} textFormats={textFormats} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} pptImporting={pptImporting} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} updateTextFormat={updateTextFormat} addExtra={addExtra} removeExtra={removeExtraSection} updateExtra={changeExtra} addFoldSection={addFoldSection} removeFoldSection={removeFoldSection} updateFoldSection={updateFoldSection} onEditAnnotation={editAnnotation} onChooseImage={imageFile} onImportPptx={importPptx} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); setTextFormats((now) => now.filter((item) => item.parent !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><button type="button" className={`annotation-edit-chip tone-${item.tone}`} onClick={() => editAnnotation(item)}><span>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><small>범위·색상·내용 수정</small></button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
+    {screen === "teacher" && <section className="teacher-inline"><div className="teacher-head"><p>TEACHER STUDIO</p><h2>출판 지면에서 바로 작성하기</h2><span>제목·작가·이미지·각주와 하위 목록을 이 페이지에서 바로 편집합니다.</span></div><form onSubmit={publish}><Publication form={form} annotations={annotations} blocks={blocks} alignments={lineAlignments} textStyles={textStyles} textFormats={textFormats} extras={extras} foldSections={foldSections} editor sourceLoading={sourceLoading} pptImporting={pptImporting} update={update} updateBlock={updateBlock} updateAlignment={updateAlignment} updateTextFormat={updateTextFormat} addExtra={addExtra} removeExtra={removeExtraSection} updateExtra={changeExtra} addFoldSection={addFoldSection} removeFoldSection={removeFoldSection} updateFoldSection={updateFoldSection} onEditAnnotation={editAnnotation} onChooseImage={imageFile} onImportPptx={importPptx} onSelectSource={(selected) => selectText("source", selected)} onSelectModern={(selected) => selectText("modern", selected)} onDraftChange={(parent, value) => { editorDrafts.current[parent] = value; }} onAddNote={addNote} onSearchSources={searchSources} onLoadSource={loadSource} onDeleteModern={() => { delete editorDrafts.current.modern; setBlocks((now) => ({ ...now, modernTranslationHidden: true })); setAnnotations((now) => now.filter((item) => item.area !== "modern")); setTextFormats((now) => now.filter((item) => item.parent !== "modern")); }} onRestoreModern={() => setBlocks((now) => ({ ...now, modernTranslationHidden: false }))} /><section className="annotation-manager"><h3>추가된 각주</h3>{annotations.length ? <ul>{annotations.map((item) => <li key={item.id}><button type="button" className={`annotation-edit-chip tone-${item.tone}`} onClick={() => editAnnotation(item)}><span>{item.area === "modern" ? "현대어 풀이" : "작품 원문"} · {item.phrase}</span><small>범위·색상·내용 수정</small></button></li>)}</ul> : <p>아직 추가된 각주가 없습니다.</p>}</section>{message && <p className="publish-message" role="alert">{message}</p>}<div className="publish-bar">{editingId && <button type="button" className="delete-publication" disabled={loading} onClick={deleteWork}>출판물 삭제</button>}<button type="button" onClick={() => setScreen("library")}>취소</button><button type="submit" className="primary" disabled={loading}>{loading ? "처리 중…" : editingId ? "수정 내용 다시 출판" : "해설 출판하기"}</button></div></form></section>}
     {screen === "detail" && !selected && <section className="work-loading">작품을 불러오는 중입니다.</section>}
     {screen === "detail" && selected && <>{user?.role === "teacher" && <section className="detail-actions"><button className="edit-published" onClick={editSelected}>수정하기</button><button type="button" className="delete-published" disabled={loading} onClick={() => deleteWork(selected.id)}>삭제하기</button></section>}<Publication form={{ title: selected.title || "", author: selected.author || "", sourceCitation: selected.generated_result?.sourceCitation || "", genre: selected.genre || "문학", sourceText: selected.source_text || "", theme: selected.theme || "", expressionFeatures: selected.expression_features || "", summary: selected.summary || "", commentary: selected.commentary || "", authorImageUrl: selected.generated_result?.authorImageUrl || "" }} annotations={selected.generated_result?.annotations || []} blocks={selected.generated_result?.editorBlocks || emptyBlocks} alignments={normalizeAlignments(selected.generated_result?.lineAlignments)} textStyles={selected.generated_result?.textStyles || {}} textFormats={selected.generated_result?.textFormats || []} extras={savedExtraSections(selected)} foldSections={savedFoldSections(selected)} publishedAt={selected.published_at} discussion={<QandA comments={comments} user={user} value={commentText} loading={loading} onChange={setCommentText} onSubmit={submitComment} onReply={async (parentId, body) => postComment(parentId, body)} onDelete={deleteComment} onLogin={() => { setAuthMessage(""); setAuthOpen(true); }} />} /><section className="detail-bottom-actions"><button className="back" onClick={openLibrary}>← 자료실로</button></section></>}
     {screen === "profile" && <section className="profile-page"><button className="back" onClick={() => setScreen("library")}>← 작품 자료실로</button><p>MY PROFILE</p><h2>내 정보 관리</h2><span>이름과 닉네임은 작품별 Q&amp;A에 표시됩니다.</span><label>이름<input value={realName} onChange={(event) => setRealName(event.target.value)} placeholder="예: 홍길동" /></label><label>닉네임 <small>최대 7글자</small><input value={nickname} maxLength={7} onChange={(event) => setNickname(event.target.value)} placeholder="예: 문학소년" /></label><button className="primary" disabled={loading} onClick={saveProfile}>{loading ? "저장 중…" : "내 정보 저장"}</button><div className="profile-withdrawal"><h3>회원 탈퇴</h3><p>계정과 회원 정보는 삭제되지만 작성한 Q&amp;A는 대화 기록을 위해 작성 당시 이름으로 보존됩니다. 탈퇴 전에는 본인이, 이후에는 교사 관리자만 삭제할 수 있습니다.</p><button type="button" disabled={loading} onClick={deleteAccount}>{loading ? "처리 중…" : "회원 탈퇴"}</button></div></section>}
