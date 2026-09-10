@@ -17,7 +17,8 @@ type TextFont = "myeongjo" | "barun" | "nanumMyeongjo" | "nanumGothic" | "nanumP
 type TextStyle = { font?: TextFont; size?: number; color?: string; bold?: boolean; italic?: boolean; underline?: boolean };
 type TextStyles = Record<string, TextStyle>;
 type TextFormatRange = TextStyle & { id: string; parent: string; start: number; end: number };
-type TableContentEmbed = { id: string; parent: string; type: "table"; rows: string[][] };
+type TableHeaderMode = "row" | "column" | "both" | "none";
+type TableContentEmbed = { id: string; parent: string; type: "table"; rows: string[][]; headerMode: TableHeaderMode };
 type ImageContentEmbed = { id: string; parent: string; type: "image"; src: string; alt: string; caption: string };
 type ContentEmbed = TableContentEmbed | ImageContentEmbed;
 type Work = {
@@ -274,12 +275,37 @@ function savedContentEmbeds(work: Work): ContentEmbed[] {
     if (!item?.id || !item.parent) return saved;
     if (item.type === "table" && Array.isArray(item.rows)) {
       const rows = item.rows.slice(0, 30).map((row) => Array.isArray(row) ? row.slice(0, 12).map((cell) => String(cell ?? "").slice(0, 1000)) : []);
-      if (rows.length && rows.some((row) => row.length)) saved.push({ id: item.id, parent: item.parent, type: "table", rows });
+      const headerMode: TableHeaderMode = item.headerMode === "column" || item.headerMode === "both" || item.headerMode === "none" ? item.headerMode : "row";
+      if (rows.length && rows.some((row) => row.length)) saved.push({ id: item.id, parent: item.parent, type: "table", rows, headerMode });
       return saved;
     }
     if (item.type === "image" && typeof item.src === "string" && item.src.startsWith("data:image/")) saved.push({ id: item.id, parent: item.parent, type: "image", src: item.src, alt: String(item.alt || "").slice(0, 200), caption: String(item.caption || "").slice(0, 300) });
     return saved;
   }, []);
+}
+
+function spreadsheetClipboardRows(text: string) {
+  const rows: string[][] = [[]];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') { cell += '"'; index += 1; }
+      else if (quoted) quoted = false;
+      else if (!cell.length) quoted = true;
+      else cell += character;
+    } else if (!quoted && character === "\t") {
+      rows[rows.length - 1].push(cell); cell = "";
+    } else if (!quoted && (character === "\r" || character === "\n")) {
+      rows[rows.length - 1].push(cell); cell = "";
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      rows.push([]);
+    } else cell += character;
+  }
+  rows[rows.length - 1].push(cell);
+  if (rows.length > 1 && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === "") rows.pop();
+  return rows.map((row) => row.map((value) => value.slice(0, 1000)));
 }
 
 async function prepareContentImage(file: File) {
@@ -492,11 +518,22 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
     const items = contentEmbeds.filter((item) => item.parent === parent);
     const tableWith = (item: TableContentEmbed, rows: string[][]) => updateContentEmbed?.(item.id, { ...item, rows });
     const updateCell = (item: TableContentEmbed, rowIndex: number, columnIndex: number, value: string) => tableWith(item, item.rows.map((row, index) => index === rowIndex ? row.map((cell, cellIndex) => cellIndex === columnIndex ? value : cell) : row));
+    const pasteCells = (item: TableContentEmbed, rowIndex: number, columnIndex: number, pastedRows: string[][]) => {
+      const rowCount = Math.min(30, Math.max(item.rows.length, rowIndex + pastedRows.length));
+      const pastedColumnCount = Math.max(0, ...pastedRows.map((row) => row.length));
+      const columnCount = Math.min(12, Math.max(item.rows[0]?.length || 0, columnIndex + pastedColumnCount));
+      const rows = Array.from({ length: rowCount }, (_, nextRow) => Array.from({ length: columnCount }, (_, nextColumn) => item.rows[nextRow]?.[nextColumn] || ""));
+      pastedRows.forEach((row, pastedRowIndex) => row.forEach((cell, pastedColumnIndex) => {
+        const targetRow = rowIndex + pastedRowIndex; const targetColumn = columnIndex + pastedColumnIndex;
+        if (targetRow < rowCount && targetColumn < columnCount) rows[targetRow][targetColumn] = cell;
+      }));
+      tableWith(item, rows);
+    };
     const addRow = (item: TableContentEmbed) => tableWith(item, [...item.rows, Array.from({ length: item.rows[0]?.length || 2 }, () => "")]);
     const removeRow = (item: TableContentEmbed) => { if (item.rows.length > 1) tableWith(item, item.rows.slice(0, -1)); };
     const addColumn = (item: TableContentEmbed) => tableWith(item, item.rows.map((row) => [...row, ""]));
     const removeColumn = (item: TableContentEmbed) => { if ((item.rows[0]?.length || 0) > 1) tableWith(item, item.rows.map((row) => row.slice(0, -1))); };
-    return <><div className="content-embed-list">{items.map((item, itemIndex) => <div className={`content-embed content-embed-${item.type}`} key={item.id}>{editor && <div className="content-embed-toolbar"><b>{item.type === "table" ? "표" : "이미지"}</b><button type="button" disabled={itemIndex === 0} onClick={() => moveContentEmbed?.(item.id, -1)}>↑ 위로</button><button type="button" disabled={itemIndex === items.length - 1} onClick={() => moveContentEmbed?.(item.id, 1)}>↓ 아래로</button><button type="button" className="content-embed-delete" onClick={() => removeContentEmbed?.(item.id)}>삭제</button></div>}{item.type === "table" ? <>{editor && <div className="table-edit-actions"><button type="button" onClick={() => addRow(item)}>행 추가</button><button type="button" disabled={item.rows.length <= 1} onClick={() => removeRow(item)}>마지막 행 삭제</button><button type="button" onClick={() => addColumn(item)}>열 추가</button><button type="button" disabled={(item.rows[0]?.length || 0) <= 1} onClick={() => removeColumn(item)}>마지막 열 삭제</button></div>}<div className="content-table-scroll"><table><tbody>{item.rows.map((row, rowIndex) => <tr key={`${item.id}-row-${rowIndex}`}>{row.map((cell, columnIndex) => { const Cell = rowIndex === 0 ? "th" : "td"; return <Cell key={`${item.id}-${rowIndex}-${columnIndex}`}>{editor ? <textarea value={cell} maxLength={1000} aria-label={`${rowIndex + 1}행 ${columnIndex + 1}열`} onChange={(event) => updateCell(item, rowIndex, columnIndex, event.target.value)} /> : cell}</Cell>; })}</tr>)}</tbody></table></div></> : <figure><img src={item.src} alt={item.alt || item.caption || "작품 해설 이미지"} />{editor ? <div className="content-image-fields"><label>대체 설명<input value={item.alt} maxLength={200} onChange={(event) => updateContentEmbed?.(item.id, { ...item, alt: event.target.value })} placeholder="이미지 내용을 설명해 주세요." /></label><label>캡션<input value={item.caption} maxLength={300} onChange={(event) => updateContentEmbed?.(item.id, { ...item, caption: event.target.value })} placeholder="이미지 아래에 표시할 설명" /></label></div> : item.caption && <figcaption>{item.caption}</figcaption>}</figure>}</div>)}</div>{editor && <div className="content-embed-add"><button type="button" onClick={() => addTableEmbed?.(parent)}>+ 표 작성하기</button><label>+ 이미지 넣기<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { addImageEmbed?.(parent, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></div>}</>;
+    return <><div className="content-embed-list">{items.map((item, itemIndex) => <div className={`content-embed content-embed-${item.type}`} key={item.id}>{editor && <div className="content-embed-toolbar"><b>{item.type === "table" ? "표" : "이미지"}</b><button type="button" disabled={itemIndex === 0} onClick={() => moveContentEmbed?.(item.id, -1)}>↑ 위로</button><button type="button" disabled={itemIndex === items.length - 1} onClick={() => moveContentEmbed?.(item.id, 1)}>↓ 아래로</button><button type="button" className="content-embed-delete" onClick={() => removeContentEmbed?.(item.id)}>삭제</button></div>}{item.type === "table" ? <>{editor && <><div className="table-edit-actions"><button type="button" onClick={() => addRow(item)}>행 추가</button><button type="button" disabled={item.rows.length <= 1} onClick={() => removeRow(item)}>마지막 행 삭제</button><button type="button" onClick={() => addColumn(item)}>열 추가</button><button type="button" disabled={(item.rows[0]?.length || 0) <= 1} onClick={() => removeColumn(item)}>마지막 열 삭제</button><label className="table-header-mode">머리글 기준<select value={item.headerMode} onChange={(event) => updateContentEmbed?.(item.id, { ...item, headerMode: event.target.value as TableHeaderMode })}><option value="row">첫 행</option><option value="column">첫 열</option><option value="both">첫 행과 첫 열</option><option value="none">없음</option></select></label></div><p className="table-paste-hint">엑셀에서 복사한 범위를 원하는 셀에 붙여넣으면 행과 열을 자동으로 인식합니다.</p></>}<div className="content-table-scroll"><table><tbody>{item.rows.map((row, rowIndex) => <tr key={`${item.id}-row-${rowIndex}`}>{row.map((cell, columnIndex) => { const rowHeader = (item.headerMode === "row" || item.headerMode === "both") && rowIndex === 0; const columnHeader = (item.headerMode === "column" || item.headerMode === "both") && columnIndex === 0; const Cell = rowHeader || columnHeader ? "th" : "td"; return <Cell scope={rowHeader ? "col" : columnHeader ? "row" : undefined} key={`${item.id}-${rowIndex}-${columnIndex}`}>{editor ? <textarea value={cell} maxLength={1000} aria-label={`${rowIndex + 1}행 ${columnIndex + 1}열`} onChange={(event) => updateCell(item, rowIndex, columnIndex, event.target.value)} onPaste={(event) => { const pastedRows = spreadsheetClipboardRows(event.clipboardData.getData("text/plain")); if (pastedRows.length > 1 || (pastedRows[0]?.length || 0) > 1) { event.preventDefault(); pasteCells(item, rowIndex, columnIndex, pastedRows); } }} /> : cell}</Cell>; })}</tr>)}</tbody></table></div></> : <figure><img src={item.src} alt={item.alt || item.caption || "작품 해설 이미지"} />{editor ? <div className="content-image-fields"><label>대체 설명<input value={item.alt} maxLength={200} onChange={(event) => updateContentEmbed?.(item.id, { ...item, alt: event.target.value })} placeholder="이미지 내용을 설명해 주세요." /></label><label>캡션<input value={item.caption} maxLength={300} onChange={(event) => updateContentEmbed?.(item.id, { ...item, caption: event.target.value })} placeholder="이미지 아래에 표시할 설명" /></label></div> : item.caption && <figcaption>{item.caption}</figcaption>}</figure>}</div>)}</div>{editor && <div className="content-embed-add"><button type="button" onClick={() => addTableEmbed?.(parent)}>+ 표 작성하기</button><label>+ 이미지 넣기<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { addImageEmbed?.(parent, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></div>}</>;
   };
   const editableText = (key: keyof typeof blankForm, value: string, placeholder: string, className = "") => editor
     ? <input className={`publication-input ${className}`} value={value} onChange={(e) => update?.(key, e.target.value)} placeholder={placeholder} aria-label={placeholder} />
@@ -885,7 +922,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   function changeExtra(id: string, key: "title" | "content", value: string) { if (key === "content") { const previous = extras.find((item) => item.id === id)?.content || ""; setTextFormats((now) => remapFormats(now, id, previous, value)); } setExtras((now) => now.map((item) => item.id === id ? { ...item, [key]: value } : item)); }
   function removeExtraSection(id: string) { const foldIds = new Set(foldSections.filter((item) => item.parent === id).map((item) => `fold:${item.id}`)); setExtras((now) => now.filter((item) => item.id !== id)); setFoldSections((now) => now.filter((item) => item.parent !== id)); setContentEmbeds((now) => now.filter((item) => item.parent !== id)); setTextFormats((now) => now.filter((item) => item.parent !== id && !foldIds.has(item.parent))); }
   function removeFoldSection(id: string) { setFoldSections((now) => now.filter((item) => item.id !== id)); setTextFormats((now) => now.filter((item) => item.parent !== `fold:${id}`)); }
-  function addTableEmbed(parent: string) { setContentEmbeds((now) => [...now, { id: crypto.randomUUID(), parent, type: "table", rows: [["항목", "내용"], ["", ""]] }]); }
+  function addTableEmbed(parent: string) { setContentEmbeds((now) => [...now, { id: crypto.randomUUID(), parent, type: "table", rows: [["항목", "내용"], ["", ""]], headerMode: "row" }]); }
   async function addImageEmbed(parent: string, file?: File) { if (!file) return; setMessage("이미지를 최적화하고 있습니다…"); try { const src = await prepareContentImage(file); setContentEmbeds((now) => [...now, { id: crypto.randomUUID(), parent, type: "image", src, alt: "", caption: "" }]); setMessage("이미지를 넣었습니다. 대체 설명과 캡션을 작성할 수 있습니다."); } catch (error) { setMessage(error instanceof Error ? error.message : "이미지를 넣지 못했습니다."); } }
   function updateContentEmbed(id: string, value: ContentEmbed) { setContentEmbeds((now) => now.map((item) => item.id === id ? value : item)); }
   function removeContentEmbed(id: string) { if (!window.confirm("이 표 또는 이미지를 삭제할까요?")) return; setContentEmbeds((now) => now.filter((item) => item.id !== id)); }
