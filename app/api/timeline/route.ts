@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { configured, publicRest, requireRole, rest } from "../_lib/supabase";
+import { sortTimelineEvents, type TimelineEvent } from "../../timeline/timeline-sort";
 
 export const runtime = "nodejs";
 
-type TimelineEvent = { id: string; world: string; period: string; korea: string; literature: string };
 const timelineTitle = "__literary_timeline__";
 const legacyTimelineUrl = "https://lhsstart.synology.me/literature/lhistory.html";
 
@@ -22,11 +22,12 @@ function legacyEvents(html: string): TimelineEvent[] {
 
 function cleanEvents(value: unknown): TimelineEvent[] {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 2500).flatMap((item) => {
+  const events = value.slice(0, 2500).flatMap((item) => {
     const row = item as Partial<TimelineEvent>;
     const event = { id: String(row.id || crypto.randomUUID()).slice(0, 80), world: String(row.world || "").slice(0, 2000), period: String(row.period || "").slice(0, 120), korea: String(row.korea || "").slice(0, 2000), literature: String(row.literature || "").slice(0, 2000) };
     return event.world || event.period || event.korea || event.literature ? [event] : [];
   });
+  return sortTimelineEvents(events);
 }
 
 async function importedLegacyEvents() {
