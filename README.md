@@ -6,7 +6,7 @@
 
 이 사이트의 Supabase Auth와 `profiles`가 세 사이트의 공통 회원 DB입니다. 로그인·회원가입 성공 시 `lhsstart.synology.me` 하위 도메인용 세션을 저장하므로 문법(`grammar.lhsstart.synology.me`)과 진로(`ca.lhsstart.synology.me`) 사이트에서도 별도 가입 없이 같은 계정과 교사·학생 역할을 사용합니다.
 
-세 사이트는 모두 HTTPS로 서비스해야 합니다. 문법·진로 사이트는 이 서버의 공개 계정 설정 API에서 Supabase URL과 게시용 키를 자동으로 받아옵니다. 필요하면 두 공개값을 각 사이트 `.env`에 동일하게 넣어 직접 연결할 수도 있지만, `SUPABASE_SERVICE_ROLE_KEY`와 `TEACHER_INVITE_CODE`는 이 문학 서버에만 보관합니다. 기존 브라우저 세션은 최초 배포 뒤 한 번 다시 로그인하면 공통 세션으로 전환됩니다.
+세 사이트는 모두 HTTPS로 서비스해야 합니다. 문법·진로 사이트에는 현재 Supabase URL과 `anon` 게시용 키가 기본값으로 포함되어 있으며, 키를 교체할 때는 두 공개값을 각 사이트 `.env`에도 동일하게 갱신합니다. `SUPABASE_SERVICE_ROLE_KEY`와 `TEACHER_INVITE_CODE`는 이 문학 서버에만 보관합니다. 기존 브라우저 세션은 최초 배포 뒤 한 번 다시 로그인하면 공통 세션으로 전환됩니다.
 
 ## 교사·학생 워크플로우
 

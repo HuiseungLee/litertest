@@ -3,6 +3,27 @@ import { nicknameInUse, userRest } from "../_lib/supabase";
 
 export const runtime = "nodejs";
 
+const allowedOrigins = new Set([
+  "https://literature.lhsstart.synology.me",
+  "https://grammar.lhsstart.synology.me",
+  "https://ca.lhsstart.synology.me",
+]);
+
+export async function OPTIONS(request: Request) {
+  const origin = request.headers.get("origin") ?? "";
+  if (!allowedOrigins.has(origin)) return new NextResponse(null, { status: 403 });
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Max-Age": "86400",
+      Vary: "Origin",
+    },
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,6 +51,20 @@ export async function POST(request: Request) {
       const profileResponse = await userRest("profiles", data.access_token, { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ id: data.user.id, role, display_name: nickname }) });
       if (!profileResponse.ok && role === "teacher") throw new Error("교사 프로필을 만들지 못했습니다. 관리자에게 문의해 주세요.");
     }
-    return NextResponse.json(data);
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Could not create the account." }, { status: 400 }); }
+    return withCors(NextResponse.json(data), request);
+  } catch (error) {
+    return withCors(
+      NextResponse.json({ error: error instanceof Error ? error.message : "Could not create the account." }, { status: 400 }),
+      request,
+    );
+  }
+}
+
+function withCors(response: NextResponse, request: Request) {
+  const origin = request.headers.get("origin") ?? "";
+  if (allowedOrigins.has(origin)) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+    response.headers.set("Vary", "Origin");
+  }
+  return response;
 }
