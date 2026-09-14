@@ -1,3 +1,5 @@
+import { sharedAuthSessionFromCookieHeader } from "@/lib/shared-auth";
+
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -78,7 +80,8 @@ export async function updateUserMetadata(token: string, data: Record<string, str
   return response.json();
 }
 export async function currentUser(request: Request) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    || sharedAuthSessionFromCookieHeader(request.headers.get("cookie"))?.access_token;
   if (!token || !url || !publishableKey) return null;
   const auth = await fetch(`${url}/auth/v1/user`, { headers: { apikey: publishableKey, Authorization: `Bearer ${token}` } });
   if (!auth.ok) return null;

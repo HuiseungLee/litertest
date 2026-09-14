@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { restoreSharedAuthSession } from "@/lib/shared-auth";
 import { sortTimelineEvents, type TimelineEvent } from "./timeline-sort";
 
 type TimelineField = "world" | "period" | "korea" | "literature";
@@ -53,9 +54,10 @@ export default function TimelineEditor() {
         if (active) setMessage(error instanceof Error ? error.message : "연대표를 불러오지 못했습니다.");
       }
       try {
-        const saved = sessionStorage.getItem("literary-session");
-        const session = saved ? JSON.parse(saved) as { access_token?: string } : {};
-        if (session.access_token) {
+        const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const publicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+        const session = publicUrl && publicKey ? await restoreSharedAuthSession(publicUrl, publicKey) : null;
+        if (session?.access_token) {
           const response = await fetch("/api/session", { headers: { Authorization: `Bearer ${session.access_token}` } });
           const data = await response.json();
           if (active) {
