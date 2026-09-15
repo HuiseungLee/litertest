@@ -62,7 +62,7 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -p "$NAS_PORT" \
             "$NAS_USER@$NAS_HOST" \
-            'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh' \
+            'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh || { echo "Retrying once after updating the deployment script." >&2; sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh; }' \
             2>"$ssh_error_file"
           ssh_status=$?
           set -e
