@@ -138,7 +138,7 @@ export default function TimelineEditor() {
   return <main className="timeline-page">
     <header className="timeline-header">
       <Link href="/">수비니기는 문학시간</Link>
-      <nav><Link href="/">작품 자료실</Link><a href="https://lhsstart.synology.me/literature/lhistory.html">기존 연대표</a><a href="https://lhsstart.synology.me">국어시간</a></nav>
+      <nav><Link href="/">작품 자료실</Link><Link href="/timeline">수정된 문학사 통합연대표</Link><a href="https://lhsstart.synology.me">국어시간</a></nav>
     </header>
     <section className="timeline-hero"><p>LITERATURE HISTORY</p><h1>문학사 통합 연대표</h1><span>문학사와 한국사, 세계사의 흐름을 시기별로 함께 살펴봅니다.</span></section>
     <section className="timeline-workspace">

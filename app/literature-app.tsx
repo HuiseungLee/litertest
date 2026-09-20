@@ -58,7 +58,7 @@ const legacyMenuItems = [
   { label: "작품", title: "갈래별 작품 목록", description: "다양한 갈래의 문학", image: "/literature/gallae.webp", href: "#genre-library" },
   { label: "작가", title: "작가론", description: "표현론적 관점", image: "/literature/jakga.webp", href: "/legacy/literature/ljakgaronindex.html" },
   { label: "평론", title: "창작과 평론", description: "다양한 문학의 이해", image: "/literature/pyeong.webp", href: "/legacy/literature/larticle.html" },
-  { label: "문학사", title: "국문학사", description: "문학사의 흐름", image: "/literature/munhaksa.webp", href: "/legacy/literature/lhistory.html" },
+  { label: "문학사", title: "수정된 문학사 통합연대표", description: "문학사·한국사·세계사의 흐름", image: "/literature/munhaksa.webp", href: "/timeline" },
 ];
 
 function LegacyLiteratureMenu({ legacyBase }: { legacyBase: string }) {
@@ -80,7 +80,7 @@ function LegacyLiteratureMenu({ legacyBase }: { legacyBase: string }) {
   return <section className="legacy-literature-menu" aria-labelledby="legacy-menu-title">
     <div className="legacy-menu-title" id="legacy-menu-title"><span className="old-korean-title">{"수\uE8A1니기는"}</span><strong>문학 시간</strong></div>
     <div className="legacy-options" onPointerLeave={reset} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) reset(); }}>
-      {legacyMenuItems.map((item, index) => <a className={`legacy-option${index === activeIndex ? " active" : ""}`} href={item.href.startsWith("#") ? item.href : `${legacyBase}${item.href.replace("/legacy", "")}`} key={item.label} style={{ backgroundImage: `url(${item.image})` }} onPointerEnter={() => activate(index)} onPointerMove={() => activate(index)} onFocus={() => setActiveIndex(index)}>
+      {legacyMenuItems.map((item, index) => <a className={`legacy-option${index === activeIndex ? " active" : ""}`} href={item.href.startsWith("#") || !item.href.startsWith("/legacy") ? item.href : `${legacyBase}${item.href.replace("/legacy", "")}`} key={item.label} style={{ backgroundImage: `url(${item.image})` }} onPointerEnter={() => activate(index)} onPointerMove={() => activate(index)} onFocus={() => setActiveIndex(index)}>
         <span className="legacy-option-shadow" />
         <span className="legacy-option-label"><b>{item.label}</b><span><strong>{item.title}</strong><small>{item.description}</small></span></span>
       </a>)}
@@ -445,26 +445,30 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
 }) {
   const imageInput = useRef<HTMLInputElement>(null);
   const pptxInput = useRef<HTMLInputElement>(null);
-  const imageViewerTrigger = useRef<HTMLButtonElement>(null);
+  const imageViewerTrigger = useRef<HTMLElement | null>(null);
   const sourceEditor = useRef<HTMLDivElement>(null);
   const modernEditor = useRef<HTMLDivElement>(null);
   const draggedFold = useRef<{ id: string; parent: string } | null>(null);
   const pageRef = useRef<HTMLElement>(null);
-  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string }>();
   const [pptDropActive, setPptDropActive] = useState(false);
   const [lineSelection, setLineSelection] = useState({ source: { start: 0, end: 0 }, modern: { start: 0, end: 0 } });
   const [formatSelection, setFormatSelection] = useState({ parent: "", start: 0, end: 0 });
   const [colorDrafts, setColorDrafts] = useState<Record<string, string>>({});
   const closeImageViewer = () => {
-    setImageViewerOpen(false);
+    setImageViewer(undefined);
     requestAnimationFrame(() => imageViewerTrigger.current?.focus());
   };
+  const openImageViewer = (src: string, alt: string, trigger: HTMLElement) => {
+    imageViewerTrigger.current = trigger;
+    setImageViewer({ src, alt });
+  };
   useEffect(() => {
-    if (!imageViewerOpen) return;
+    if (!imageViewer) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = previousOverflow; };
-  }, [imageViewerOpen]);
+  }, [imageViewer]);
   useEffect(() => {
     const page = pageRef.current; const body = page?.querySelector<HTMLElement>(".literature-body");
     if (!body) return;
@@ -536,7 +540,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
     const removeRow = (item: TableContentEmbed) => { if (item.rows.length > 1) tableWith(item, item.rows.slice(0, -1)); };
     const addColumn = (item: TableContentEmbed) => tableWith(item, item.rows.map((row) => [...row, ""]));
     const removeColumn = (item: TableContentEmbed) => { if ((item.rows[0]?.length || 0) > 1) tableWith(item, item.rows.map((row) => row.slice(0, -1))); };
-    return <><div className="content-embed-list">{items.map((item, itemIndex) => <div className={`content-embed content-embed-${item.type}`} key={item.id}>{editor && <div className="content-embed-toolbar"><b>{item.type === "table" ? "표" : "이미지"}</b><button type="button" disabled={itemIndex === 0} onClick={() => moveContentEmbed?.(item.id, -1)}>↑ 위로</button><button type="button" disabled={itemIndex === items.length - 1} onClick={() => moveContentEmbed?.(item.id, 1)}>↓ 아래로</button><button type="button" className="content-embed-delete" onClick={() => removeContentEmbed?.(item.id)}>삭제</button></div>}{item.type === "table" ? <>{editor && <><div className="table-edit-actions"><button type="button" onClick={() => addRow(item)}>행 추가</button><button type="button" disabled={item.rows.length <= 1} onClick={() => removeRow(item)}>마지막 행 삭제</button><button type="button" onClick={() => addColumn(item)}>열 추가</button><button type="button" disabled={(item.rows[0]?.length || 0) <= 1} onClick={() => removeColumn(item)}>마지막 열 삭제</button><label className="table-header-mode">머리글 기준<select value={item.headerMode} onChange={(event) => updateContentEmbed?.(item.id, { ...item, headerMode: event.target.value as TableHeaderMode })}><option value="row">첫 행</option><option value="column">첫 열</option><option value="both">첫 행과 첫 열</option><option value="none">없음</option></select></label></div><p className="table-paste-hint">엑셀에서 복사한 범위를 원하는 셀에 붙여넣으면 행과 열을 자동으로 인식합니다.</p></>}<div className="content-table-scroll"><table><tbody>{item.rows.map((row, rowIndex) => <tr key={`${item.id}-row-${rowIndex}`}>{row.map((cell, columnIndex) => { const rowHeader = (item.headerMode === "row" || item.headerMode === "both") && rowIndex === 0; const columnHeader = (item.headerMode === "column" || item.headerMode === "both") && columnIndex === 0; const Cell = rowHeader || columnHeader ? "th" : "td"; return <Cell scope={rowHeader ? "col" : columnHeader ? "row" : undefined} key={`${item.id}-${rowIndex}-${columnIndex}`}>{editor ? <textarea value={cell} maxLength={1000} aria-label={`${rowIndex + 1}행 ${columnIndex + 1}열`} onChange={(event) => updateCell(item, rowIndex, columnIndex, event.target.value)} onPaste={(event) => { const pastedRows = spreadsheetClipboardRows(event.clipboardData.getData("text/plain")); if (pastedRows.length > 1 || (pastedRows[0]?.length || 0) > 1) { event.preventDefault(); pasteCells(item, rowIndex, columnIndex, pastedRows); } }} /> : cell}</Cell>; })}</tr>)}</tbody></table></div></> : <figure><img src={item.src} alt={item.alt || item.caption || "작품 해설 이미지"} />{editor ? <div className="content-image-fields"><label>대체 설명<input value={item.alt} maxLength={200} onChange={(event) => updateContentEmbed?.(item.id, { ...item, alt: event.target.value })} placeholder="이미지 내용을 설명해 주세요." /></label><label>캡션<input value={item.caption} maxLength={300} onChange={(event) => updateContentEmbed?.(item.id, { ...item, caption: event.target.value })} placeholder="이미지 아래에 표시할 설명" /></label></div> : item.caption && <figcaption>{item.caption}</figcaption>}</figure>}</div>)}</div>{editor && <div className="content-embed-add"><button type="button" onClick={() => addTableEmbed?.(parent)}>+ 표 작성하기</button><label>+ 이미지 넣기<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { addImageEmbed?.(parent, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></div>}</>;
+    return <><div className="content-embed-list">{items.map((item, itemIndex) => <div className={`content-embed content-embed-${item.type}`} key={item.id}>{editor && <div className="content-embed-toolbar"><b>{item.type === "table" ? "표" : "이미지"}</b><button type="button" disabled={itemIndex === 0} onClick={() => moveContentEmbed?.(item.id, -1)}>↑ 위로</button><button type="button" disabled={itemIndex === items.length - 1} onClick={() => moveContentEmbed?.(item.id, 1)}>↓ 아래로</button><button type="button" className="content-embed-delete" onClick={() => removeContentEmbed?.(item.id)}>삭제</button></div>}{item.type === "table" ? <>{editor && <><div className="table-edit-actions"><button type="button" onClick={() => addRow(item)}>행 추가</button><button type="button" disabled={item.rows.length <= 1} onClick={() => removeRow(item)}>마지막 행 삭제</button><button type="button" onClick={() => addColumn(item)}>열 추가</button><button type="button" disabled={(item.rows[0]?.length || 0) <= 1} onClick={() => removeColumn(item)}>마지막 열 삭제</button><label className="table-header-mode">머리글 기준<select value={item.headerMode} onChange={(event) => updateContentEmbed?.(item.id, { ...item, headerMode: event.target.value as TableHeaderMode })}><option value="row">첫 행</option><option value="column">첫 열</option><option value="both">첫 행과 첫 열</option><option value="none">없음</option></select></label></div><p className="table-paste-hint">엑셀에서 복사한 범위를 원하는 셀에 붙여넣으면 행과 열을 자동으로 인식합니다.</p></>}<div className="content-table-scroll"><table><tbody>{item.rows.map((row, rowIndex) => <tr key={`${item.id}-row-${rowIndex}`}>{row.map((cell, columnIndex) => { const rowHeader = (item.headerMode === "row" || item.headerMode === "both") && rowIndex === 0; const columnHeader = (item.headerMode === "column" || item.headerMode === "both") && columnIndex === 0; const Cell = rowHeader || columnHeader ? "th" : "td"; return <Cell scope={rowHeader ? "col" : columnHeader ? "row" : undefined} key={`${item.id}-${rowIndex}-${columnIndex}`}>{editor ? <textarea value={cell} maxLength={1000} aria-label={`${rowIndex + 1}행 ${columnIndex + 1}열`} onChange={(event) => updateCell(item, rowIndex, columnIndex, event.target.value)} onPaste={(event) => { const pastedRows = spreadsheetClipboardRows(event.clipboardData.getData("text/plain")); if (pastedRows.length > 1 || (pastedRows[0]?.length || 0) > 1) { event.preventDefault(); pasteCells(item, rowIndex, columnIndex, pastedRows); } }} /> : cell}</Cell>; })}</tr>)}</tbody></table></div></> : <figure>{editor ? <img src={item.src} alt={item.alt || item.caption || "작품 해설 이미지"} /> : <button type="button" className="content-image-viewer-trigger" aria-haspopup="dialog" aria-label={`${item.alt || item.caption || "작품 해설 이미지"} 크게 보기`} onClick={(event) => openImageViewer(item.src, item.alt || item.caption || "작품 해설 이미지", event.currentTarget)}><img src={item.src} alt={item.alt || item.caption || "작품 해설 이미지"} /><span>클릭하여 크게 보기</span></button>}{editor ? <div className="content-image-fields"><label>대체 설명<input value={item.alt} maxLength={200} onChange={(event) => updateContentEmbed?.(item.id, { ...item, alt: event.target.value })} placeholder="이미지 내용을 설명해 주세요." /></label><label>캡션<input value={item.caption} maxLength={300} onChange={(event) => updateContentEmbed?.(item.id, { ...item, caption: event.target.value })} placeholder="이미지 아래에 표시할 설명" /></label></div> : item.caption && <figcaption>{item.caption}</figcaption>}</figure>}</div>)}</div>{editor && <div className="content-embed-add"><button type="button" onClick={() => addTableEmbed?.(parent)}>+ 표 작성하기</button><label>+ 판서 이미지 넣기<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { addImageEmbed?.(parent, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></div>}</>;
   };
   const editableText = (key: keyof typeof blankForm, value: string, placeholder: string, className = "") => editor
     ? <input className={`publication-input ${className}`} value={value} onChange={(e) => update?.(key, e.target.value)} placeholder={placeholder} aria-label={placeholder} />
@@ -744,7 +748,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
       <div className={`author-portrait ${editor ? "is-drop-target" : ""}`} onClick={() => editor && imageInput.current?.click()} onDragOver={(e) => { if (editor) e.preventDefault(); }} onDrop={(e) => { if (editor) { e.preventDefault(); onChooseImage?.(e.dataTransfer.files[0]); } }}>
         {form.authorImageUrl ? editor
           ? <img src={form.authorImageUrl} alt="작가 이미지" />
-          : <button ref={imageViewerTrigger} type="button" className="author-image-viewer-trigger" aria-haspopup="dialog" aria-label={`${form.author || "작가"} 이미지 원본 보기`} onClick={(event) => { event.stopPropagation(); setImageViewerOpen(true); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지`} /></button>
+          : <button type="button" className="author-image-viewer-trigger" aria-haspopup="dialog" aria-label={`${form.author || "작가"} 이미지 원본 보기`} onClick={(event) => { event.stopPropagation(); openImageViewer(form.authorImageUrl, `${form.author || "작가"} 이미지 원본`, event.currentTarget); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지`} /></button>
           : <span>{editor ? "이미지를 끌어 놓거나 클릭" : (form.author || "작가").slice(0, 1)}</span>}
         {editor && <input ref={imageInput} hidden type="file" accept="image/*" onChange={(e) => onChooseImage?.(e.target.files?.[0])} />}
       </div>
@@ -762,8 +766,8 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
         <section id="appreciation" className="literature-section"><div className="section-rule" /><article>
           <h3>작품 원문</h3>
           {editor ? <><label className="source-label">출판 화면에서 작품 원문 직접 편집 <span><button type="button" onClick={onSearchSources}>인터넷 원문 검색</button><button type="button" disabled={sourceLoading} onClick={onLoadSource}>{sourceLoading ? "AI 원문 불러오는 중…" : "AI 원문 불러오기"}</button><button type="button" disabled={pptImporting} onClick={() => pptxInput.current?.click()}>{pptImporting ? "PPT 분석 중…" : "PPT 가져오기"}</button><input ref={pptxInput} hidden type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => { onImportPptx?.(event.target.files?.[0]); event.currentTarget.value = ""; }} /></span></label>{textStyleToolbar("source", "작품 원문", "source")}{editablePoem("source", form.sourceText)}<p className="pptx-drop-hint">PPTX를 편집 박스에 끌어 놓으면 텍스트 상자를 Gemini로 분석해 원문과 각주 설명을 자동 분리합니다.</p>
-            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("source")}</> : <div className="poem" style={styleFor("source")}>{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"), false, textFormats)}</div>}{addFold("source")}
-          {modernVisible && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{textStyleToolbar("modern", "현대어 풀이", "modern")}{editablePoem("modern", blocks.modernTranslation)}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("modern")}</> : <div className="poem" style={styleFor("modern")}>{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"), false, textFormats)}</div>}{addFold("modern")}</>}
+            <div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("source")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("source")}</> : <div className="poem" style={styleFor("source")}>{poem(form.sourceText, annotations, "source", alignments.source, foldInsertions("source"), false, textFormats)}</div>}{embeddedContent("source")}{addFold("source")}
+          {modernVisible && <><h3 className="modern-section-title">현대어 풀이 {editor && <button type="button" className="remove-section" onClick={onDeleteModern}>현대어 풀이 삭제</button>}</h3>{editor ? <>{textStyleToolbar("modern", "현대어 풀이", "modern")}{editablePoem("modern", blocks.modernTranslation)}<div className="annotation-actions"><button type="button" onClick={() => onAddNote?.("modern")}>선택한 구절에 각주 달기</button><span>각주를 수정하려면 본문의 색상 구간을 클릭하세요.</span></div>{annotationManager("modern")}</> : <div className="poem" style={styleFor("modern")}>{poem(blocks.modernTranslation, annotations, "modern", alignments.modern, foldInsertions("modern"), false, textFormats)}</div>}{embeddedContent("modern")}{addFold("modern")}</>}
           {editor && blocks.modernTranslationHidden && <button type="button" className="add-inline" onClick={onRestoreModern}>+ 현대어 풀이 추가</button>}
           {extra("appreciation")}{add("appreciation")}
         </article></section>
@@ -780,7 +784,7 @@ function Publication({ form, annotations, blocks, alignments, textStyles, textFo
         {discussion && <section id="check" className="literature-section qna-section"><div className="section-rule" /><article><h3>Q&amp;A</h3>{discussion}</article></section>}
       </div>
     </div>
-  </article>{imageViewerOpen && form.authorImageUrl && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`${form.author || "작가"} 이미지 원본 보기`} onContextMenu={(event) => event.preventDefault()}><button type="button" className="image-lightbox-surface" autoFocus aria-label="원본 이미지 닫기" onClick={closeImageViewer} onKeyDown={(event) => { if (event.key === "Escape") closeImageViewer(); }}><img src={form.authorImageUrl} alt={`${form.author || "작가"} 이미지 원본`} /><span className="image-lightbox-close" aria-hidden="true">×</span></button></div>}</>;
+  </article>{imageViewer && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`${imageViewer.alt} 크게 보기`} onContextMenu={(event) => event.preventDefault()}><button type="button" className="image-lightbox-surface" autoFocus aria-label="확대 이미지 닫기" onClick={closeImageViewer} onKeyDown={(event) => { if (event.key === "Escape") closeImageViewer(); }}><img src={imageViewer.src} alt={imageViewer.alt} /><span className="image-lightbox-close" aria-hidden="true">×</span></button></div>}</>;
 }
 
 function ArticleQuickNav({ portalUrl, literatureUrl }: { portalUrl: string; literatureUrl: string }) {
@@ -788,7 +792,7 @@ function ArticleQuickNav({ portalUrl, literatureUrl }: { portalUrl: string; lite
   return <nav className="article-quick-nav" aria-label="작품 페이지 바로가기">
     <button type="button" onClick={goBack}><span aria-hidden="true">←</span><b>이전으로</b></button>
     <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span aria-hidden="true">↑</span><b>맨위로</b></button>
-    <a href="https://lhsstart.synology.me/literature/lhistory.html"><span aria-hidden="true">≋</span><b>문학사연대표</b></a>
+    <a href="/timeline"><span aria-hidden="true">≋</span><b>통합연대표</b></a>
     <a href={literatureUrl}><span aria-hidden="true">文</span><b>문학시간</b></a>
     <a href={portalUrl}><span aria-hidden="true">가</span><b>국어시간</b></a>
   </nav>;
