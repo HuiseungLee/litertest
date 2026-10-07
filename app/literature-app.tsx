@@ -130,15 +130,30 @@ function AnnotationMark({ annotation, layer, rangeStart, rangeEnd, children, onE
   const showTooltip = (x: number, y: number) => window.dispatchEvent(new CustomEvent("literary-tooltip", {
     detail: { note: annotation.note, tone: annotationTone, x, y },
   }));
+  const isSameAnnotation = (target: EventTarget | null) => target instanceof Element
+    && target.closest<HTMLElement>(".poetic-term")?.dataset.annotationId === annotation.id;
+  const enterAnnotation = (event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    const alreadyActive = document.querySelector<HTMLElement>(".poetic-term.annotation-active")?.dataset.annotationId === annotation.id;
+    activate(true);
+    // Keep one stable tooltip while the pointer crosses rendered pieces of the same note.
+    // Updating on every pointer movement made the fixed tooltip visibly chase and shake.
+    if (!alreadyActive) showTooltip(event.clientX, event.clientY);
+  };
+  const leaveAnnotation = (event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if (isSameAnnotation(event.relatedTarget)) return;
+    activate(false);
+    window.dispatchEvent(new Event("literary-tooltip-hide"));
+  };
   return <mark
     className={`poetic-term tone-${annotationTone} annotation-layer-${layer}`}
     data-annotation-id={annotation.id}
     data-range-start={rangeStart}
     data-range-end={rangeEnd}
     tabIndex={rangeStart ? 0 : -1}
-    onPointerEnter={(event) => { event.stopPropagation(); activate(true); showTooltip(event.clientX, event.clientY); }}
-    onPointerMove={(event) => { event.stopPropagation(); activate(true); showTooltip(event.clientX, event.clientY); }}
-    onPointerLeave={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
+    onPointerEnter={enterAnnotation}
+    onPointerLeave={leaveAnnotation}
     onFocus={(event) => { event.stopPropagation(); activate(true); const rect = event.currentTarget.getBoundingClientRect(); showTooltip(rect.left + rect.width / 2, rect.bottom); }}
     onBlur={(event) => { event.stopPropagation(); activate(false); window.dispatchEvent(new Event("literary-tooltip-hide")); }}
     onClick={(event) => { if (!onEdit || window.getSelection()?.toString()) return; event.preventDefault(); event.stopPropagation(); onEdit(annotation, event.currentTarget.closest<HTMLDivElement>(".wysiwyg-poem-editor") || undefined); }}
