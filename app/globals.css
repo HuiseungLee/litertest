@@ -169,3 +169,9 @@
 /* Blackboard/reference images open like the legacy commentary-page modal. */
 .content-image-viewer-trigger{position:relative;display:block;width:100%;padding:0;border:0;border-radius:8px;background:transparent;cursor:zoom-in;overflow:hidden}.content-image-viewer-trigger img{display:block;width:auto;max-width:100%;max-height:640px;margin:0 auto;object-fit:contain;transition:opacity .18s ease}.content-image-viewer-trigger span{position:absolute;right:10px;bottom:10px;padding:6px 9px;border-radius:999px;background:#172d3bd9;color:#fff;font:700 11px/1.2 Pretendard,sans-serif;opacity:0;transition:opacity .18s ease}.content-image-viewer-trigger:hover img{opacity:.82}.content-image-viewer-trigger:hover span,.content-image-viewer-trigger:focus-visible span{opacity:1}.content-image-viewer-trigger:focus-visible{outline:3px solid #276aaf;outline-offset:3px}
 @media(max-width:620px){.content-image-viewer-trigger span{opacity:1}}
+
+/* Keep newly entered poem lines aligned with rendered lines inside the WYSIWYG editor. */
+.wysiwyg-poem-editor{padding-left:24px}.wysiwyg-poem-editor[data-empty="true"]:before{left:24px}.wysiwyg-poem-editor>.poem-line,.wysiwyg-poem-editor>div:not(.collapsible-extra){min-height:1.82em;margin:0;text-indent:0;white-space:pre-wrap}
+
+/* Preserve teacher-entered line breaks in annotation explanations. */
+.term-tooltip,.cursor-tooltip{white-space:pre-wrap;overflow-wrap:anywhere}
