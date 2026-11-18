@@ -4,6 +4,7 @@ import { nicknameInUse, userRest } from "../_lib/supabase";
 export const runtime = "nodejs";
 
 const allowedOrigins = new Set([
+  "https://literature.foredu.synology.me",
   "https://literature.lhsstart.synology.me",
   "https://grammar.lhsstart.synology.me",
   "https://ca.lhsstart.synology.me",

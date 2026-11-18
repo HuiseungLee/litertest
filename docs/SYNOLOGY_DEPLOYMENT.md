@@ -1,10 +1,10 @@
 # Synology 문학 웹앱 배포
 
-이 문서는 `literature.lhsstart.synology.me`를 Synology에서 Docker로 실행하는 절차입니다.
+이 문서는 `literature.foredu.synology.me`를 Synology에서 Docker로 실행하는 절차입니다.
 
 ## 구성
 
-- 공개 주소: `https://literature.lhsstart.synology.me`
+- 공개 주소: `https://literature.foredu.synology.me`
 - Synology 내부 주소: `http://127.0.0.1:3000`
 - Supabase: `https://supabase.lhsstart.synology.me`
 - 대표 홈페이지: `https://lhsstart.synology.me`
@@ -25,7 +25,7 @@ cp .env.synology.example .env
 `.env`에 다음 값을 입력합니다. 실제 키와 비밀번호를 GitHub에 커밋하거나 화면으로 공유하지 않습니다.
 
 ```dotenv
-NEXT_PUBLIC_SITE_URL=https://literature.lhsstart.synology.me
+NEXT_PUBLIC_SITE_URL=https://literature.foredu.synology.me
 NEXT_PUBLIC_PORTAL_URL=https://lhsstart.synology.me
 NEXT_PUBLIC_SUPABASE_URL=https://supabase.lhsstart.synology.me
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=자체호스팅_PUBLISHABLE_KEY
@@ -91,21 +91,21 @@ DSM의 **제어판 → 로그인 포털 → 고급 → 역방향 프록시**에�
 |---|---|
 | 이름 | Literature |
 | 소스 프로토콜 | HTTPS |
-| 소스 호스트 | literature.lhsstart.synology.me |
+| 소스 호스트 | literature.foredu.synology.me |
 | 소스 포트 | 443 |
 | 대상 프로토콜 | HTTP |
 | 대상 호스트 | 127.0.0.1 |
 | 대상 포트 | 3000 |
 
-`literature.lhsstart.synology.me` 인증서를 이 역방향 프록시 서비스에 배정합니다.
+`literature.foredu.synology.me` 인증서를 이 역방향 프록시 서비스에 배정합니다.
 
 ## Supabase 로그인 허용 주소
 
 Supabase 폴더 `/volume1/docker/supabase-project/.env`에서 사이트 주소를 문학 웹앱으로 바꿉니다.
 
 ```dotenv
-SITE_URL=https://literature.lhsstart.synology.me
-ADDITIONAL_REDIRECT_URLS=https://literature.lhsstart.synology.me/**,https://lhsstart.synology.me/**
+SITE_URL=https://literature.foredu.synology.me
+ADDITIONAL_REDIRECT_URLS=https://literature.foredu.synology.me/**,https://lhsstart.synology.me/**
 ```
 
 설정을 적용합니다.
@@ -125,11 +125,11 @@ GitHub 저장소의 **Settings → Secrets and variables → Actions**에 다음
 
 | 이름 | 값 |
 |---|---|
-| `NAS_HOST` | NAS의 외부 호스트 이름 |
 | `NAS_PORT` | NAS SSH 포트 |
 | `NAS_USER` | 배포용 SSH 사용자 |
 | `NAS_SSH_KEY` | 배포용 SSH 비공개 키 |
-| `NAS_KNOWN_HOSTS` | `ssh-keyscan -p <포트> <호스트>` 출력 |
+
+자동 배포는 실제 SSH 연결 대상으로 `foredu.synology.me`를 사용합니다. 워크플로는 새 NAS의 ED25519 지문을 코드에 고정하고, 실행 시 스캔한 지문이 정확히 일치할 때만 접속합니다. NAS를 교체하거나 SSH 호스트 키를 재발급했다면 DSM에서 확인한 새 지문으로 워크플로의 `NAS_CONNECT_FINGERPRINT`를 갱신해야 합니다.
 
 배포용 SSH 사용자는 비밀번호 입력 없이 아래 명령 하나만 관리자 권한으로 실행할 수 있어야 합니다.
 
@@ -186,7 +186,7 @@ docker compose up -d --build
 대표 홈페이지의 문학 메뉴는 `iframe` 대신 일반 링크를 사용합니다.
 
 ```html
-<a href="https://literature.lhsstart.synology.me/">문학</a>
+<a href="https://literature.foredu.synology.me/">문학</a>
 ```
 
 문학 웹앱의 상단 `국어시간 홈` 링크는 `NEXT_PUBLIC_PORTAL_URL`로 돌아갑니다.

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://literature.lhsstart.synology.me";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://literature.foredu.synology.me";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

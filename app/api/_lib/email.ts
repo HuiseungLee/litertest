@@ -27,7 +27,7 @@ export async function sendReplyNotification(input: ReplyNotification) {
   const pass = process.env.SMTP_PASS;
   const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_ADMIN_EMAIL || user || "";
   const fromName = process.env.SMTP_FROM_NAME || process.env.SMTP_SENDER_NAME || "수빙니기는 문학시간";
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://literature.lhsstart.synology.me").replace(/\/$/, "");
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://literature.foredu.synology.me").replace(/\/$/, "");
   const workUrl = `${siteUrl}/works/${encodeURIComponent(input.workId)}`;
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,

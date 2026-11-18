@@ -843,7 +843,7 @@ export default function LiteratureApp({ initialWorkId }: { initialWorkId?: strin
   const editorDrafts = useRef<Record<string, string>>({});
   const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL; const publicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL || "https://lhsstart.synology.me";
-  const literatureUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://literature.lhsstart.synology.me";
+  const literatureUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://literature.foredu.synology.me";
   const genreOptions = [...new Set([...classicGenres, ...modernGenres].map((item) => item.label).concat(categories))];
   const headers = () => ({ "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) });
   const update = (key: keyof typeof blankForm, value: string) => {

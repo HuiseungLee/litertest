@@ -4,7 +4,7 @@
 
 ## 문학·문법·진로 통합 계정
 
-이 사이트의 Supabase Auth와 `profiles`가 세 사이트의 공통 회원 DB입니다. 로그인·회원가입 성공 시 `lhsstart.synology.me` 하위 도메인용 세션을 저장하므로 문법(`grammar.lhsstart.synology.me`)과 진로(`ca.lhsstart.synology.me`) 사이트에서도 별도 가입 없이 같은 계정과 교사·학생 역할을 사용합니다.
+이 사이트의 Supabase Auth와 `profiles`가 세 사이트의 공통 회원 DB입니다. 문학 사이트는 `literature.foredu.synology.me`에서 운영하며 문법·진로 사이트와 같은 계정·교사·학생 역할 데이터를 사용합니다. 서로 다른 상위 도메인 사이에는 브라우저 쿠키가 공유되지 않으므로 새 문학 주소에서는 한 번 다시 로그인해야 합니다.
 
 세 사이트는 모두 HTTPS로 서비스해야 합니다. 문법·진로 사이트에는 현재 Supabase URL과 `anon` 게시용 키가 기본값으로 포함되어 있으며, 키를 교체할 때는 두 공개값을 각 사이트 `.env`에도 동일하게 갱신합니다. `SUPABASE_SERVICE_ROLE_KEY`와 `TEACHER_INVITE_CODE`는 이 문학 서버에만 보관합니다. 기존 브라우저 세션은 최초 배포 뒤 한 번 다시 로그인하면 공통 세션으로 전환됩니다.
 
@@ -40,6 +40,6 @@ Next.js 프로덕션 빌드 기준으로 `next build`를 통과하도록 구성�
 
 ## Synology 배포
 
-Synology에서는 Docker 컨테이너를 `127.0.0.1:3000`에만 연결하고 DSM 역방향 프록시를 통해 `literature.lhsstart.synology.me`로 공개합니다. 자세한 절차는 [`docs/SYNOLOGY_DEPLOYMENT.md`](docs/SYNOLOGY_DEPLOYMENT.md)를 참고하세요.
+Synology에서는 Docker 컨테이너를 `127.0.0.1:3000`에만 연결하고 DSM 역방향 프록시를 통해 `literature.foredu.synology.me`로 공개합니다. 자세한 절차는 [`docs/SYNOLOGY_DEPLOYMENT.md`](docs/SYNOLOGY_DEPLOYMENT.md)를 참고하세요.
 
 출판된 작품은 `/works/[id]` 고유 주소를 사용하므로 대표 홈페이지와 검색 결과에서 특정 작품으로 직접 연결할 수 있습니다. 상단의 `국어시간 홈`은 `NEXT_PUBLIC_PORTAL_URL`로 이동합니다.
