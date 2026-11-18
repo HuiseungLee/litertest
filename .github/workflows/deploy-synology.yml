@@ -22,6 +22,7 @@ jobs:
         shell: bash
         env:
           NAS_HOST: ${{ secrets.NAS_HOST }}
+          NAS_CONNECT_HOST: foredu.synology.me
           NAS_PORT: ${{ secrets.NAS_PORT }}
           NAS_USER: ${{ secrets.NAS_USER }}
           NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
@@ -30,6 +31,7 @@ jobs:
           set -euo pipefail
 
           test -n "$NAS_HOST"
+          test -n "$NAS_CONNECT_HOST"
           test -n "$NAS_PORT"
           test -n "$NAS_USER"
           test -n "$NAS_SSH_KEY"
@@ -58,10 +60,11 @@ jobs:
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o IdentitiesOnly=yes \
+            -o HostKeyAlias="$NAS_HOST" \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -p "$NAS_PORT" \
-            "$NAS_USER@$NAS_HOST" \
+            "$NAS_USER@$NAS_CONNECT_HOST" \
             'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh || { echo "Retrying once after updating the deployment script." >&2; sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh; }' \
             2>"$ssh_error_file"
           ssh_status=$?
