@@ -21,45 +21,34 @@ jobs:
       - name: Deploy the latest main commit
         shell: bash
         env:
-          NAS_HOST: ${{ secrets.NAS_HOST }}
           NAS_CONNECT_HOST: foredu.synology.me
+          NAS_CONNECT_FINGERPRINT: SHA256:9v3+3XtSAkoZHySVYqk/8t0KiW8VuTEwjPSlotDsq70
           NAS_PORT: ${{ secrets.NAS_PORT }}
           NAS_USER: ${{ secrets.NAS_USER }}
           NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
-          NAS_KNOWN_HOSTS: ${{ secrets.NAS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
 
-          test -n "$NAS_HOST"
           test -n "$NAS_CONNECT_HOST"
+          test -n "$NAS_CONNECT_FINGERPRINT"
           test -n "$NAS_PORT"
           test -n "$NAS_USER"
           test -n "$NAS_SSH_KEY"
-          test -n "$NAS_KNOWN_HOSTS"
 
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$NAS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$NAS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519"
 
           if ! ssh-keygen -y -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1; then
             echo '::error title=Synology SSH configuration::NAS_SSH_KEY is not a valid SSH private key.'
             exit 1
           fi
 
-          if ! ssh-keygen -F "[$NAS_HOST]:$NAS_PORT" -f "$HOME/.ssh/known_hosts" >/dev/null; then
-            echo '::error title=Synology SSH configuration::NAS_KNOWN_HOSTS does not contain the configured NAS host and port.'
-            exit 1
-          fi
-
-          awk \
-            -v old_host="[$NAS_HOST]:$NAS_PORT" \
-            -v new_host="[$NAS_CONNECT_HOST]:$NAS_PORT" \
-            '{ if ($1 == old_host) $1 = new_host; print }' \
-            "$HOME/.ssh/known_hosts" > "$HOME/.ssh/known_hosts.deploy"
+          ssh-keyscan -T 15 -p "$NAS_PORT" -t ed25519 "$NAS_CONNECT_HOST" 2>/dev/null > "$HOME/.ssh/known_hosts.deploy"
           chmod 600 "$HOME/.ssh/known_hosts.deploy"
-          if ! ssh-keygen -F "[$NAS_CONNECT_HOST]:$NAS_PORT" -f "$HOME/.ssh/known_hosts.deploy" >/dev/null; then
-            echo '::error title=Synology SSH configuration::Could not map the pinned NAS host key to the new host name.'
+          scanned_fingerprint="$(ssh-keygen -lf "$HOME/.ssh/known_hosts.deploy" -E sha256 | awk 'NR == 1 { print $2 }')"
+          if [ "$scanned_fingerprint" != "$NAS_CONNECT_FINGERPRINT" ]; then
+            echo '::error title=Synology SSH configuration::The new NAS host key does not match the pinned fingerprint.'
             exit 1
           fi
 
