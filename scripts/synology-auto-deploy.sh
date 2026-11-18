@@ -9,6 +9,7 @@ APP_DIR="${APP_DIR:-/volume1/docker/literature-app}"
 DEPLOY_REMOTE="${DEPLOY_REMOTE:-origin}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/api/health}"
+PUBLIC_SITE_URL="${PUBLIC_SITE_URL:-https://literature.foredu.synology.me}"
 STATE_DIR="$APP_DIR/.deploy-state"
 LOCK_DIR="$STATE_DIR/lock"
 LAST_SUCCESS_FILE="$STATE_DIR/last-successful-commit"
@@ -57,6 +58,23 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
+if [ ! -f .env ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Environment file not found: $APP_DIR/.env" >&2
+  exit 1
+fi
+
+environment_changed=0
+current_site_url="$(sed -n 's/^NEXT_PUBLIC_SITE_URL=//p' .env | tail -n 1)"
+if [ "$current_site_url" != "$PUBLIC_SITE_URL" ]; then
+  if grep -q '^NEXT_PUBLIC_SITE_URL=' .env; then
+    sed -i "s|^NEXT_PUBLIC_SITE_URL=.*$|NEXT_PUBLIC_SITE_URL=$PUBLIC_SITE_URL|" .env
+  else
+    printf '\nNEXT_PUBLIC_SITE_URL=%s\n' "$PUBLIC_SITE_URL" >> .env
+  fi
+  environment_changed=1
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Updated NEXT_PUBLIC_SITE_URL to $PUBLIC_SITE_URL"
+fi
+
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tracked local changes found; automatic deployment stopped." >&2
   git status --short >&2
@@ -77,7 +95,7 @@ if [ "$current_commit" != "$target_commit" ]; then
   git merge --ff-only "$target_commit"
 fi
 
-if [ "$last_success" = "$target_commit" ] && curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+if [ "$last_success" = "$target_commit" ] && [ "$environment_changed" -eq 0 ] && curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Already deployed: $target_commit"
   exit 0
 fi
