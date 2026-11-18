@@ -52,6 +52,17 @@ jobs:
             exit 1
           fi
 
+          awk \
+            -v old_host="[$NAS_HOST]:$NAS_PORT" \
+            -v new_host="[$NAS_CONNECT_HOST]:$NAS_PORT" \
+            '{ if ($1 == old_host) $1 = new_host; print }' \
+            "$HOME/.ssh/known_hosts" > "$HOME/.ssh/known_hosts.deploy"
+          chmod 600 "$HOME/.ssh/known_hosts.deploy"
+          if ! ssh-keygen -F "[$NAS_CONNECT_HOST]:$NAS_PORT" -f "$HOME/.ssh/known_hosts.deploy" >/dev/null; then
+            echo '::error title=Synology SSH configuration::Could not map the pinned NAS host key to the new host name.'
+            exit 1
+          fi
+
           ssh_error_file="$(mktemp)"
           set +e
           ssh \
@@ -60,9 +71,8 @@ jobs:
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o IdentitiesOnly=yes \
-            -o HostKeyAlias="$NAS_HOST" \
             -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts.deploy" \
             -p "$NAS_PORT" \
             "$NAS_USER@$NAS_CONNECT_HOST" \
             'sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh || { echo "Retrying once after updating the deployment script." >&2; sudo -n /bin/sh /volume1/docker/literature-app/scripts/synology-auto-deploy.sh; }' \
