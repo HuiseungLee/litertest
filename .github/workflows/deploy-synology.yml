@@ -43,6 +43,7 @@ jobs:
             echo '::error title=Synology SSH configuration::NAS_SSH_KEY is not a valid SSH private key.'
             exit 1
           fi
+          deploy_public_key="$(ssh-keygen -y -f "$HOME/.ssh/id_ed25519")"
 
           ssh-keyscan -T 15 -p "$NAS_PORT" -t ed25519 "$NAS_CONNECT_HOST" 2>/dev/null > "$HOME/.ssh/known_hosts.deploy"
           chmod 600 "$HOME/.ssh/known_hosts.deploy"
@@ -72,6 +73,7 @@ jobs:
           if [ "$ssh_status" -ne 0 ]; then
             if grep -Eq 'Permission denied|no mutual signature algorithm' "$ssh_error_file"; then
               ssh_failure='The NAS rejected the configured SSH key.'
+              printf '::notice title=Synology deploy public key::%s\n' "$deploy_public_key"
             elif grep -Eq 'Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED' "$ssh_error_file"; then
               ssh_failure='The NAS host key does not match NAS_KNOWN_HOSTS.'
             elif grep -Eq 'Could not resolve hostname|Name or service not known|Temporary failure in name resolution' "$ssh_error_file"; then
